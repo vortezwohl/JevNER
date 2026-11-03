@@ -49,7 +49,7 @@ from jevner.entities import (
     resolve_entity_types,
 )
 from jevner.prompt import render_detection_state, render_gender_state, render_typing_state
-from jevner.tokenizer import BundledTokenizer, strip_edge_punctuation
+from jevner.tokenizer import BundledTokenizer, strip_span
 
 logger = logging.getLogger("jevner")
 
@@ -229,7 +229,7 @@ class JevNER:
         )
 
     def _detect_regions(
-        self, window_text: str
+        self, window_text: str, tokens: list[tuple[int, int, str]]
     ) -> tuple[list[tuple[int, int, str]], list[int], list[list[tuple[int, int, str]]]]:
         """在单个窗口内检测实体词元区间。
 
@@ -239,13 +239,13 @@ class JevNER:
         结果按窗口文本哈希写入进程内 LRU 缓存，重复窗口零请求。
 
         Args:
-            window_text: 窗口文本。
+            window_text: 窗口文本（原文的精确子串，渲染 state 用）。
+            tokens: 窗口词元列表，偏移锚定在原文上。
 
         Returns:
             (窗口全部词元, 命中词元索引, 严格连续区间) 三元组；
-            词元为 (start, end, text)，start/end 为窗口内字符偏移。
+            词元为 (start, end, text)，start/end 为原文全局字符偏移。
         """
-        tokens = self._tokenizer.window_tokens(window_text)
         if not tokens:
             return [], [], []
         cache_key = hashlib.sha256(window_text.encode("utf-8")).hexdigest()
@@ -382,7 +382,11 @@ class JevNER:
         return bridged
 
     def _type_window(
-        self, window_text: str, entity_types: set[EntityType], prob_threshold: float
+        self,
+        window_text: str,
+        tokens: list[tuple[int, int, str]],
+        entity_types: set[EntityType],
+        prob_threshold: float,
     ) -> list[Entity]:
         """在单个窗口内完成检测与分型，返回实体列表。
 
@@ -397,49 +401,53 @@ class JevNER:
         一起按概率降序排列——不强制一个实体只有一种类型。
 
         Args:
-            window_text: 窗口文本。
+            window_text: 窗口文本（原文的精确子串，渲染 state 用）。
+            tokens: 窗口词元列表，偏移锚定在原文上。
             entity_types: 本次识别启用的实体类型集合。
             prob_threshold: 主类型概率过滤阈值。
 
         Returns:
-            该窗口内识别出的实体列表（未跨窗口合并）。
+            该窗口内识别出的实体列表（未跨窗口合并），偏移锚定原文。
         """
-        tokens, hits, strict_regions = self._detect_regions(window_text)
+        _, hits, strict_regions = self._detect_regions(window_text, tokens)
         all_regions: list[list[tuple[int, int, str]]] = list(strict_regions)
         for region in self._bridge_regions(tokens, hits, strict_regions):
             if region not in all_regions:
                 all_regions.append(region)
         if not all_regions:
             return []
-        # 区间内生成全部连续子 span，剥离首尾标点后按文本去重
-        spans: list[str] = []
-        seen: set[str] = set()
+        # 区间内生成全部连续子 span；偏移剥离首尾标点后同步修正，
+        # 保证 span 文本始终是原文的精确子串（嵌套关联的锚点）
+        spans: list[tuple[str, int, int]] = []
+        seen: set[tuple[str, int, int]] = set()
         for region in all_regions:
             n = len(region)
             for i in range(n):
                 for length in range(1, min(MAX_ENTITY_TOKENS, n - i) + 1):
-                    start = region[i][0]
-                    end = region[i + length - 1][1]
-                    text = strip_edge_punctuation(window_text[start:end])
+                    raw_start = region[i][0]
+                    raw_end = region[i + length - 1][1]
+                    text, start, end = strip_span(window_text, raw_start, raw_end)
                     key = text.strip()
                     # 跳过空白、重复、以及完全不含字母数字的纯标点候选
-                    if not key or key in seen or not any(ch.isalnum() for ch in key):
+                    if not key or (text, start, end) in seen:
                         continue
-                    seen.add(key)
-                    spans.append(text)
+                    if not any(ch.isalnum() for ch in key):
+                        continue
+                    seen.add((text, start, end))
+                    spans.append((text, start, end))
         if not spans:
             return []
         # 分型缓存命中：跳过已判定过的 span（重叠窗口 / 重复文本复用）
         window_hash = hashlib.sha256(window_text.encode("utf-8")).hexdigest()
         uncached: list[tuple[int, str]] = []
         cached_entities: dict[int, tuple[tuple[EntityType, float], ...]] = {}
-        for i, span in enumerate(spans):
-            cache_key = (window_hash, span, prob_threshold)
+        for i, (text, _start, _end) in enumerate(spans):
+            cache_key = (window_hash, text, prob_threshold)
             hit = self._typing_cache.read(cache_key)
             if hit is not None:
                 cached_entities[i] = cast("tuple[tuple[EntityType, float], ...]", hit)
             else:
-                uncached.append((i, span))
+                uncached.append((i, text))
         entities: list[Entity] = []
         state = render_typing_state(window_text, entity_types)
         criteria: dict[str, str | None] = {
@@ -516,81 +524,70 @@ class JevNER:
                         cast("dict[int, tuple[tuple[EntityType, float], ...]]", result.returns)
                     )
         for pairs, result in zip(batches, batch_results, strict=True):
-            for i, span in pairs:
-                self._typing_cache.write((window_hash, span, prob_threshold), result.get(i, ()))
+            for i, text in pairs:
+                self._typing_cache.write((window_hash, text, prob_threshold), result.get(i, ()))
         # 汇总：缓存命中 + 本轮判定，NONE（空元组）不产出实体
         all_ranked: dict[int, tuple[tuple[EntityType, float], ...]] = dict(cached_entities)
         for result in batch_results:
             all_ranked.update(result)
-        for i, span in enumerate(spans):
+        for i, (text, start, end) in enumerate(spans):
             ranked = all_ranked.get(i, ())
             if ranked:
-                entities.append(Entity(text=span.strip(), types=ranked))
+                entities.append(Entity(text=text, types=ranked, start=start, end=end))
         return entities
 
     def _combine(self, entities: list[Entity], deduplicate: bool) -> list[Entity]:
-        """跨窗口实体合并（含嵌套处理与多类型并集）。
+        """跨窗口实体合并（按出现位置去重与类型并集）。
 
-        规则按嵌套语义划分：
+        规则：
 
-        - 同文本包含：视为窗口边界碎片或复合噪声，主类型概率最高的
-          实体优先占据输出位（BertNER 的改进版：高置信度短实体如
-          "福建"不会被低置信度复合实体"福建福州"吞掉）；
-        - 跨文本包含：嵌套实体（如 ORG "Bank of America" 内嵌 GPE
-          "America"），两侧都保留；
-        - 同文本去重（deduplicate=True）：跨窗口重复识别的同一文本
-          合并为一个实体，多类型取并集，同类型取最高概率。
+        - 同一出现位置（start/end 相同）：跨窗口/跨批次重复识别的同
+          一实体，合并为一个，多类型取并集，同类型取最高概率；
+        - 不同位置但区间交叠且主类型相同：检测方差的碎片（如只命中
+          "吴"而漏"子豪"时产出的 PERSON"吴"），由概率最高者吸收
+          ——真实嵌套实体（GPE"福建"内嵌 GPE"福建福州"）主类型
+          相同时同样交叠，但完整实体概率恒高于碎片，保留的仍是
+          完整实体；主类型不同的交叠是嵌套实体，两侧都保留；
+        - 互不交叠：各自独立保留。
+
+        关联（包含/交叠关系）不在合并时丢失也不在合并时判定：
+        输出侧 entity_tree() 依据偏移包含关系派生树结构。
 
         Args:
             entities: 全部窗口的实体平铺列表。
-            deduplicate: 是否对同文本重复实体做去重合并（类型并集）。
+            deduplicate: 是否对同位置重复实体做去重合并（类型并集）。
 
         Returns:
-            合并后的实体列表，按文本排序；每实体 types 按概率降序。
+            合并后的实体列表，按 (start, end) 排序；每实体 types
+            按概率降序，text 为原文精确子串。
         """
-        # 按文本分组：主类型概率最高者优先保留，嵌套关系跨文本判定
-        by_text: dict[str, list[Entity]] = {}
+        if not deduplicate:
+            return sorted(entities, key=lambda e: (e.start, e.end, e.text))
+        # 第一步：按出现位置分组，同位置合并类型并集
+        by_span: dict[tuple[int, int], list[Entity]] = {}
         for e in entities:
-            by_text.setdefault(e.text, []).append(e)
-        kept: list[Entity] = []
-        for _, group in sorted(by_text.items(), key=lambda kv: (-len(kv[0]), kv[0])):
-            # 同文本分组内：主概率降序，最高置信度的判定先占据输出位
-            group.sort(key=lambda e: (-e.base_probability, -len(e.text), e.text))
-            # 同文本合并多类型：类型并集，同类型取最高概率
-            merged_types: dict[EntityType, float] = {}
+            by_span.setdefault((e.start, e.end), []).append(e)
+        unified: list[Entity] = []
+        for (start, end), group in sorted(by_span.items()):
+            best_per_type: dict[EntityType, float] = {}
+            text = group[0].text
             for e in group:
                 for etype, prob in e.types:
-                    if etype not in merged_types or prob > merged_types[etype]:
-                        merged_types[etype] = prob
-            ranked = sorted(merged_types.items(), key=lambda kv: -kv[1])
-            kept.append(Entity(text=group[0].text, types=tuple(ranked)))
-        # 嵌套处理：长文本优先保留，短文本被长文本包含时按主类型
-        # 判定——主类型相同视为边界碎片吸收（如"共和国外交部"并入
-        # "中华人民共和国外交部"）；主类型不同是嵌套实体（如 GPE
-        # "中华人民共和国"内嵌于 ORG "中华人民共和国外交部"），保留
+                    if etype not in best_per_type or prob > best_per_type[etype]:
+                        best_per_type[etype] = prob
+            ranked = tuple(sorted(best_per_type.items(), key=lambda kv: -kv[1]))
+            unified.append(Entity(text=text, types=ranked, start=start, end=end))
+        # 第二步：同主类型区间交叠的碎片吸收——概率降序遍历，
+        # 已保留实体先占据输出位，后续同主类型交叠者视为碎片吸收
+        unified.sort(key=lambda e: (-e.base_probability, -len(e.text), e.start))
         survivors: list[Entity] = []
-        for e in sorted(kept, key=lambda e: (-len(e.text), -e.base_probability, e.text)):
-            absorbed = False
-            for s in survivors:
-                if e.text == s.text or e.text not in s.text:
-                    continue
-                # e 比 s 短且被 s 包含：主类型相同则吸收为碎片
-                if e.type is s.type:
-                    absorbed = True
-                    break
+        for e in unified:
+            absorbed = any(
+                e.type is s.type and e.start < s.end and s.start < e.end for s in survivors
+            )
             if not absorbed:
                 survivors.append(e)
-        if not deduplicate:
-            return sorted(survivors, key=lambda e: e.text)
-        # 同 (text, 主类型) 去重保最高概率已由分组合并保证；
-        # 此处再按 (text, types) 精确去重兜底
-        best: dict[tuple[str, tuple[tuple[EntityType, float], ...]], Entity] = {}
-        for e in survivors:
-            key = (e.text, e.types)
-            current = best.get(key)
-            if current is None or e.base_probability > current.base_probability:
-                best[key] = e
-        return sorted(best.values(), key=lambda e: e.text)
+        return sorted(survivors, key=lambda e: (e.start, e.end))
 
     def _recognize_genders(self, names: list[str]) -> dict[str, tuple[Gender, float]]:
         """批量判定人名性别（带进程内缓存）。
@@ -687,17 +684,27 @@ class JevNER:
         st = stride if stride is not None else max(1, ws // DEFAULT_STRIDE_DIVISOR)
         if ws < 1 or st < 1:
             raise ValueError(f"window_size ({ws}) and stride ({st}) must be positive.")
-        window_texts = [s] if fast_mode else self._tokenizer.window_texts(s, ws, st)
+        # 窗口按原文 token 偏移切分，窗口文本取原文字符区间（词元
+        # 文本含空白前缀时会互相交叠，join 重建会产生重复字符），
+        # 词元偏移全部锚定在原文上——span 与实体因此携带原文全局
+        # 偏移，嵌套关联由输出侧 entity_tree() 依据偏移包含关系派生
+        if fast_mode:
+            windows = [(s, self._tokenizer.window_tokens(s))]
+        else:
+            windows = self._tokenizer.windows(s, ws, st)
         # 窗口级并行：每窗独立完成检测 + 分型（检测/分型批已在
         # 线程池上并发），窗口间再并发提交；串行配置或单窗口退化为顺序执行
-        if len(window_texts) <= 1 or self._max_workers <= 1:
-            window_entities = [self._type_window(w, types, prob_threshold) for w in window_texts]
+        if len(windows) <= 1 or self._max_workers <= 1:
+            window_entities = [
+                self._type_window(window_text, toks, types, prob_threshold)
+                for window_text, toks in windows
+            ]
         else:
             window_entities = []
-            for result in self._pool.map(
-                self._type_window,
-                [(w, types, prob_threshold) for w in window_texts],
-            ):
+            jobs_args = [
+                (window_text, toks, types, prob_threshold) for window_text, toks in windows
+            ]
+            for result in self._pool.map(self._type_window, [(a,) for a in jobs_args]):
                 if result.error is not None:
                     logger.warning("JevNER window failed: %s\n%s", result.error, result.traceback)
                     window_entities.append([])
@@ -717,6 +724,8 @@ class JevNER:
                     Person(
                         text=e.text,
                         types=e.types,
+                        start=e.start,
+                        end=e.end,
                         gender=gender,
                         gender_probability=gender_probability,
                     )

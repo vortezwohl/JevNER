@@ -23,10 +23,13 @@ from jevner.entities import (
     FINANCE,
     TECH,
     Entity,
+    EntityNode,
     EntityPack,
     EntityType,
     Gender,
     Person,
+    entity_tree,
+    format_entity_tree,
 )
 from jevner.ner import (
     DEFAULT_MODEL,
@@ -50,6 +53,7 @@ __all__ = [
     "DEFAULT_WINDOW_SIZE",
     "ENTITY_PACKS",
     "Entity",
+    "EntityNode",
     "EntityPack",
     "EntityType",
     "FINANCE",
@@ -57,4 +61,6 @@ __all__ = [
     "JevNER",
     "Person",
     "TECH",
+    "entity_tree",
+    "format_entity_tree",
 ]

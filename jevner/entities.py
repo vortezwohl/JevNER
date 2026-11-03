@@ -1,13 +1,17 @@
-"""实体类型体系、垂直领域实体包与识别结果的数据结构定义。
+"""实体类型体系、垂直领域实体包、识别结果与嵌套关联结构定义。
 
-本模块定义三部分内容：
+本模块定义四部分内容：
 
 1. EntityType 枚举：通用命名实体类型（沿用 NER 发展至今最全面的
    OntoNotes 5.0 十八类体系，另加 MISC 兜底）+ 各垂直领域的细分类型
    （生物医学、金融、软件科技）；
 2. EntityPack 实体包：基础包 CORE + 垂直领域包，调用方按需选择，
    类型表只下发所选包的并集，控制请求体积与判定精度；
-3. Entity/Person 结果 dataclass 与 Gender 枚举。
+3. Entity/Person 结果 dataclass 与 Gender 枚举：Entity 携带原文
+   全局偏移 start/end（保证 text == source[start:end]）；
+4. EntityNode/entity_tree/format_entity_tree：依据偏移包含关系把
+   平铺实体重建为嵌套树并渲染，嵌套关联（如 GPE"福建"内嵌于
+   GPE"福建福州"）由偏移锚定，可靠且可读。
 
 调用方与维护者进入本文件时最需要先知道：
 - 默认只启用 CORE 基础包；垂直领域通过 entity_packs 参数显式叠加，
@@ -15,7 +19,9 @@
 - 枚举成员的字符串值即发送给 jev 的 Choice criteria 标签名
   （全大写英文，语言无关）；
 - Entity 支持多类型：一个实体可同时具有多种类型（如国家既是政区
-  GPE 又是地点 LOC），types 按相关性（概率）降序排列。
+  GPE 又是地点 LOC），types 按相关性（概率）降序排列；
+- 嵌套关联用 entity_tree() 派生而非内嵌 parent/children 引用：
+  偏移包含是派生事实，跨窗口合并后按输出重建，纯函数可测试。
 """
 
 from __future__ import annotations
@@ -269,13 +275,22 @@ class Entity:
     片段可同时符合多种类型（如一个国家既是政区 GPE 又是地点 LOC），
     types 按相关性（概率）降序排列，不强制单一类型。
 
+    start/end 是原文全局字符偏移（end 不含），保证不变式
+    text == source[start:end]——实体嵌套关联（entity_tree）由偏移
+    包含关系判定，比文本包含判断可靠：同一实体多次出现、空白
+    规范化差异都不会误判归属。
+
     Attributes:
-        text: 实体文本（窗口原文的精确子串）。
+        text: 实体文本（原文的精确子串）。
         types: (实体类型, 概率) 元组序列，按概率降序排列，至少一项。
+        start: 原文起点偏移（含）。
+        end: 原文终点偏移（不含）。
     """
 
     text: str
     types: tuple[tuple[EntityType, float], ...]
+    start: int
+    end: int
 
     @property
     def type(self) -> EntityType:
@@ -299,3 +314,104 @@ class Person(Entity):
 
     gender: Gender
     gender_probability: float
+
+
+@dataclass(frozen=True)
+class EntityNode:
+    """实体嵌套树节点：一个实体与其全部内层子实体。
+
+    由 entity_tree() 依据偏移包含关系派生；children 为偏移完全
+    落在本节点区间内的实体（交叉嵌套的实体互不包含，挂到最近的
+    公共外层下成为兄弟）。
+
+    Attributes:
+        entity: 本节点实体。
+        children: 内层子实体节点，按 (start, -end, text) 排序。
+    """
+
+    entity: Entity
+    children: tuple[EntityNode, ...] = ()
+
+
+def entity_tree(entities: list[Entity]) -> list[EntityNode]:
+    """依据原文偏移包含关系把平铺实体重建为嵌套树。
+
+    包含关系按偏移判定：outer 包含 inner 当且仅当
+    outer.start <= inner.start 且 inner.end <= outer.end。排序后
+    用栈一次扫描建树：按 (start, -end, text) 升序遍历，栈顶即
+    最近一个未被闭合的外层实体。
+
+    嵌套实体不是严格的树：交叉嵌套（互不包含的交叠区间，如
+    GPE(0,10) 与 PERSON(2,5)、FAC(4,8)）会被挂到最近的公共外层
+    下成为兄弟节点，而不是强行归入某一支。
+
+    Args:
+        entities: 平铺实体列表（允许同文本多处出现）。
+
+    Returns:
+        顶层（不被任何实体包含）节点列表，按 (start, -end) 排序。
+    """
+    ordered = sorted(entities, key=lambda e: (e.start, -e.end, e.text))
+    parent: list[int] = [-1] * len(ordered)
+    stack: list[int] = []
+    for i, e in enumerate(ordered):
+        while stack:
+            outer = ordered[stack[-1]]
+            if outer.start <= e.start and e.end <= outer.end:
+                break
+            stack.pop()
+        if stack:
+            parent[i] = stack[-1]
+        stack.append(i)
+    children: dict[int, list[int]] = {}
+    for i in range(len(ordered)):
+        if parent[i] >= 0:
+            children.setdefault(parent[i], []).append(i)
+
+    def build(i: int) -> EntityNode:
+        return EntityNode(entity=ordered[i], children=tuple(build(j) for j in children.get(i, [])))
+
+    return [build(i) for i in range(len(ordered)) if parent[i] < 0]
+
+
+def format_entity_tree(roots: list[EntityNode]) -> str:
+    """把实体嵌套树渲染为可读的缩进文本。
+
+    每行一个实体：文本、全部类型（按概率降序）、可选性别、
+    原文偏移区间。子实体用框线缩进挂在外层实体之下，嵌套关联
+    一目了然，例如：
+
+    ```
+    福建福州 (GPE 0.99) [16:20]
+    ├── 福建 (GPE 1.00) [16:18]
+    └── 福州 (GPE 1.00) [18:20]
+    ```
+
+    Args:
+        roots: entity_tree() 返回的顶层节点列表。
+
+    Returns:
+        渲染文本；roots 为空时为空字符串。
+    """
+
+    def label(e: Entity) -> str:
+        types = " · ".join(f"{t.value} {p:.2f}" for t, p in e.types)
+        if isinstance(e, Person):
+            head = f"{e.text} ({types} | {e.gender.value} {e.gender_probability:.2f})"
+            return f"{head} [{e.start}:{e.end}]"
+        return f"{e.text} ({types}) [{e.start}:{e.end}]"
+
+    lines: list[str] = []
+
+    def walk(node: EntityNode, prefix: str) -> None:
+        count = len(node.children)
+        for j, child in enumerate(node.children):
+            last = j == count - 1
+            connector = "└── " if last else "├── "
+            lines.append(f"{prefix}{connector}{label(child.entity)}")
+            walk(child, prefix + ("    " if last else "│   "))
+
+    for root in roots:
+        lines.append(label(root.entity))
+        walk(root, "")
+    return "\n".join(lines)

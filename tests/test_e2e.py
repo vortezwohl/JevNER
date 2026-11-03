@@ -8,7 +8,17 @@ API 计费。语种覆盖另见 tests/test_languages.py。
 
 from __future__ import annotations
 
-from jevner import BIOMED, Entity, EntityPack, EntityType, Gender, JevNER, Person
+from jevner import (
+    BIOMED,
+    Entity,
+    EntityPack,
+    EntityType,
+    Gender,
+    JevNER,
+    Person,
+    entity_tree,
+    format_entity_tree,
+)
 
 ZH_TEXT = "你好, 我的名字是吴子豪, 来自福建福州."
 
@@ -63,9 +73,25 @@ nested_inner = [
     ("New York", EntityType.GPE),
 ]
 assert any(t in texts_types for t in nested_inner), f"应保留嵌套内层 GPE: {entities}"
+# 偏移不变式：实体文本必须是原文精确子串
+for e in entities:
+    assert nested_text[e.start : e.end] == e.text, f"偏移不变式破坏: {e}"
+# 嵌套树：偏移包含关系派生，可读渲染
+roots = entity_tree(entities)
+print("  嵌套树:")
+print("  " + format_entity_tree(roots).replace("\n", "\n  "))
+bank = next((n for n in roots if n.entity.text == "Bank of America"), None)
+if bank is not None:
+    inner = [c.entity.text for c in bank.children]
+    print(f"  Bank of America 内层: {inner}")
+    assert "America" in inner or "New York" not in inner, f"内层关联应包含 America: {inner}"
 # 中文嵌套展示（跨类型嵌套保留的确定性逻辑由本地单测覆盖）
-zh_nested = ner("中华人民共和国外交部发言人耿爽在北京举行记者会", with_gender=False)
-print("  中文嵌套展示:", [f"{e.text}({e.type.value})" for e in zh_nested])
+zh_nested_text = "中华人民共和国外交部发言人耿爽在北京举行记者会"
+zh_nested = ner(zh_nested_text, with_gender=False)
+for e in zh_nested:
+    assert zh_nested_text[e.start : e.end] == e.text, f"中文偏移不变式破坏: {e}"
+print("  中文嵌套树:")
+print("  " + format_entity_tree(entity_tree(zh_nested)).replace("\n", "\n  "))
 assert ("中华人民共和国外交部" in {e.text for e in zh_nested}) or (
     EntityType.ORG in {e.type for e in zh_nested}
 ), f"中文嵌套至少应保留外层机构: {zh_nested}"
