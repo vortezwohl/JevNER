@@ -1,8 +1,9 @@
 """jevner：无本地模型的多语言命名实体识别 SDK。
 
-以 TypeSafe System One 模型 jev（"超级 BERT"，默认别名 jev-latest
-自动路由最新稳定版）替代全部本地 BERT 推理，参考 DeepLoTX BertNER
-的长文本滑动窗口算法，随包分发 Qwen3 分词器。
+以 System One 网关模型（默认 baseten/mammoth-1）替代全部本地 BERT
+推理，参考 DeepLoTX BertNER 的长文本滑动窗口算法，随包分发 Qwen3
+分词器。模型经 model_name 参数随时切换（jev-latest 等网关注册模型
+均可）。
 
 实体类型体系：基础实体包 EntityPack.CORE（OntoNotes 5.0 十八类 +
 MISC 兜底）默认启用，垂直领域包 EntityPack.BIOMED（生物医学）、

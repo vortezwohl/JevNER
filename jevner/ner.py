@@ -57,8 +57,12 @@ from jevner.tokenizer import BundledTokenizer, strip_span
 
 logger = logging.getLogger("jevner")
 
-DEFAULT_MODEL = "jev-latest"
-"""默认模型别名：自动路由到 TypeSafe 最新稳定版 jev。"""
+DEFAULT_MODEL = "baseten/mammoth-1"
+"""默认模型：BaseTen 托管的 Mammoth 1（经同一 System One 网关路由）。
+
+网关上与 jev 系列走完全相同的 system_one 协议（Noul/Choice），
+仅 model 字段不同；实测 NER 管线协议兼容、识别质量相当。
+"""
 
 LONG_CONTEXT_HEADER = {"TypeSafe-Danger-Zone-Long-Context": "true"}
 """jev 长上下文请求头。
@@ -139,10 +143,17 @@ prob_threshold，其余类型达到该下限即作为次要类型一并返回，
 0.25 起步：实测大批次下碎片 span 的次要类型概率常在 0.1~0.2，
 抬高下限避免噪声类型混入。"""
 
-TYPING_BATCH_SIZE = 64
-"""分型阶段单请求问题数。
+REQUEST_MAX_OPTIONS = 512
+"""单请求的选项总数上限（网关后端校验，超限返回 422）。
 
-分型需要精细语义判定，实测大批次会稀释 jev 对碎片 span 的 NONE
+Choice 问题每问的选项数 = 启用类型数 + NONE，分型批的每批问题数
+按 512 ÷ 每问选项数 动态计算（如 CORE 20 选项 → 每批 25 问），
+保证任意 taxonomy（含自定义多类型）下请求都不超限。"""
+
+TYPING_BATCH_SIZE = 64
+"""分型阶段单请求问题数的上限（再受选项预算动态收窄）。
+
+分型需要精细语义判定，实测大批次会稀释模型对碎片 span 的 NONE
 判定（批内问题互相干扰），小批次显著更稳。"""
 
 DETECT_BATCH_SIZE = 64
@@ -234,8 +245,9 @@ class JevNER:
         """初始化识别器。
 
         Args:
-            model_name: TypeSafe 模型名或别名，默认 'jev-latest'
-                （自动路由到最新稳定版 jev）。
+            model_name: 网关模型名，默认 'baseten/mammoth-1'
+                （BaseTen 托管的 Mammoth 1；也可传 'jev-latest' 等
+                网关注册的其他模型）。
             api_key: TypeSafe API Key，缺省时读取 TYPESAFE_API_KEY 环境变量。
             base_url: API 根地址，缺省时读取 TYPESAFE_BASE_URL 环境变量。
             timeout: 单请求超时秒数，缺省时使用 SDK 默认值。
@@ -568,12 +580,16 @@ class JevNER:
                 batch[i] = tuple(sorted(best_per_type.items(), key=lambda kv: -kv[1]))
             return batch
 
-        # 分型批次并行提交（每批 TYPING_BATCH_SIZE 个 span）；
-        # 批内判定共享同一 state，批间在线程池上并发。
+        # 分型批次并行提交；批大小按选项预算动态收窄：
+        # 每问选项数 = 类型数 + 1（NONE），每批问题数 ≤
+        # REQUEST_MAX_OPTIONS ÷ 每问选项数，且不超过 TYPING_BATCH_SIZE
+        # （网关后端对单请求选项总数有 512 上限，超限 422）。
         # batched() 以 fill_value=None 补齐尾批，需过滤 None 元素。
+        options_per_question = len(entity_types) + 1
+        batch_limit = min(TYPING_BATCH_SIZE, REQUEST_MAX_OPTIONS // options_per_question)
         batches = [
             [item for item in batch if item is not None]
-            for batch in batched(uncached, TYPING_BATCH_SIZE)
+            for batch in batched(uncached, max(1, batch_limit))
         ]
         batches = [batch for batch in batches if batch]
         if len(batches) <= 1 or self._max_workers <= 1:

@@ -1,13 +1,13 @@
 # JevNER
 
-无本地模型的多语言命名实体识别 SDK：用 TypeSafe System One 模型 **jev**（"超级 BERT"，默认 `jev-latest` 自动路由最新稳定版）替代全部本地 BERT 推理，参考 [DeepLoTX BertNER](https://github.com/vortezwohl/DeepLoTX) 的长文本滑动窗口算法，随包分发 Qwen3 分词器。
+无本地模型的多语言命名实体识别 SDK：经 System One 网关用 **baseten/mammoth-1**（默认，可经 `model_name` 切换网关内任意模型）替代全部本地 BERT 推理，参考 [DeepLoTX BertNER](https://github.com/vortezwohl/DeepLoTX) 的长文本滑动窗口算法，随包分发 Qwen3 分词器。
 
 ## 特性
 
 - **全球语种**：词元检测 + 区间分型两阶段算法，不依赖固定 n-gram 假设；实测覆盖亚洲/欧洲/美洲 24 语种（汉/日/韩/泰/越/印尼/马来/菲律宾/印地/阿拉伯/希伯来/土耳其 + 英法德西葡意俄荷波 + 美洲三语），无空格文字与粘着语均正确识别；
 - **上下文窗口**：默认窗口 12k token（按 65,535 字节请求体硬限制换算），超长文本由滑动窗口 + 窗口级并行处理；
 - **多类型实体**：一个实体可同时具有多种类型（国家既是政区 GPE 又是地点 LOC），`types` 按相关性（概率）降序排列，不强制单一类型；`type`/`base_probability` 属性兼容单类型访问；
-- **无本地模型**：不加载任何神经网络权重，唯一推理依赖是 TypeSafe API（`jev-latest`）；
+- **无本地模型**：不加载任何神经网络权重，唯一推理依赖是 System One 网关 API（默认 `baseten/mammoth-1`）；
 - **随包分词器**：Qwen3 字节级 BPE 分词器（覆盖 100+ 语言含 CJK）打包在包内 `assets/`，无需访问 HuggingFace，无需 transformers/torch；
 - **开放式类型体系**：实体类型与实体包不写死——内置 CORE/BIOMED/FINANCE/TEC 四包 31 类型仅是基座，任何用户（含非程序员的 C 端用户）可经 JSON 三段式配置（`entity_types`/`entity_packs`/`default_packs`）自定义新类型、新组合并设默认包，`EntityTaxonomy.from_json` 一行构建；
 - **嵌套实体树**：返回值即 `list[EntityNode]` 森林，偏移包含关系派生（交叉嵌套挂最近公共外层成兄弟），`print(node)` 直接得到可读树形，无需下游后处理；
@@ -59,7 +59,7 @@ forest = ner("Apple released the iPhone 17 Pro, and Nike sponsored it.")
 ## API
 
 ```python
-JevNER(model_name="jev-latest", *, api_key=None, base_url=None, timeout=None,
+JevNER(model_name="baseten/mammoth-1", *, api_key=None, base_url=None, timeout=None,
        window_size=12000)  # 按 65,535 字节请求体预算换算
 
 ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
@@ -94,7 +94,7 @@ ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
      PERSON → Choice(MALE/FEMALE/UNKNOWN) 性别判定（LRU 缓存）
 ```
 
-与 BertNER 的对应：本地 BERT token 级 BIO 预测 → jev 词元 Noul 检测 + 子 span Choice 分型；固定 n-gram 候选 → 检测区间驱动子 span；448 token 小窗口 → 12k token 窗口 + 窗口级并行；单类型输出 → 多类型按相关性排序输出；平铺列表 → 原文偏移锚定 + entity_tree 嵌套树；`Davlan/xlm-roberta-base-ner-hrl` → `jev-latest`。
+与 BertNER 的对应：本地 BERT token 级 BIO 预测 → jev 词元 Noul 检测 + 子 span Choice 分型；固定 n-gram 候选 → 检测区间驱动子 span；448 token 小窗口 → 12k token 窗口 + 窗口级并行；单类型输出 → 多类型按相关性排序输出；平铺列表 → 原文偏移锚定 + entity_tree 嵌套树；`Davlan/xlm-roberta-base-ner-hrl` → `baseten/mammoth-1`。
 
 ## 测试
 
