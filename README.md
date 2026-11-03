@@ -101,7 +101,8 @@ ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
 ```bash
 uv run ruff check jevner tests && uv run ruff format --check jevner tests  # 格式与静态检查
 uv run mypy jevner                          # 类型检查
-uv run python tests/test_local.py           # 本地算法单测（无网络，9 项）
+uv run python tests/test_local.py           # 本地算法单测（无网络，12 项）
 uv run python tests/test_e2e.py             # 端到端（需 TYPESAFE_API_KEY，6 项，产生计费）
 uv run python tests/test_languages.py       # 语言覆盖扫描（24 语种，产生计费）
+uv run python tests/bench_quick.py          # 精简性能实验（单进程约 8 次调用，产生计费）
 ```
