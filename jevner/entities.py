@@ -1,80 +1,66 @@
-"""实体类型体系、垂直领域实体包、识别结果与嵌套关联结构定义。
+"""实体类型体系：开放式类型/包定义、识别结果与嵌套关联结构。
 
 本模块定义四部分内容：
 
-1. EntityType 枚举：通用命名实体类型（沿用 NER 发展至今最全面的
-   OntoNotes 5.0 十八类体系，另加 MISC 兜底）+ 各垂直领域的细分类型
-   （生物医学、金融、软件科技）；
-2. EntityPack 实体包：基础包 CORE + 垂直领域包，调用方按需选择，
-   类型表只下发所选包的并集，控制请求体积与判定精度；
-3. Entity/Person 结果 dataclass 与 Gender 枚举：Entity 携带原文
-   全局偏移 start/end（保证 text == source[start:end]）；
-4. EntityNode/entity_tree：JevNER 的返回即嵌套森林，依据偏移包含
-   关系派生树结构（交叉嵌套挂最近公共外层成兄弟），EntityNode 的
-   __str__ 直接渲染可读树形。
+1. EntityType / EntityPack：开放式值对象——标签 + 描述构成一个实体
+   类型，命名组合构成一个实体包。不再使用封闭枚举：全部类型与包
+   都可以由用户经 JSON 扩展或覆盖（含 C 端非程序员用户）；
+2. EntityTaxonomy：实体类型体系——类型注册表 + 包注册表 + 默认包，
+   可从 JSON 构建（from_json），内置体系作为扩展基座（BUILTIN_*）；
+3. Entity / Person / EntityNode：识别结果 dataclass——Entity 携带
+   原文全局偏移 start/end（保证 text == source[start:end]），
+   EntityNode 由 JevNER 直接返回（嵌套森林，__str__ 渲染树形）；
+4. Gender：性别判定枚举（MALE/FEMALE/UNKNOWN，系统固定语义）。
 
 调用方与维护者进入本文件时最需要先知道：
-- 默认只启用 CORE 基础包；垂直领域通过 entity_packs 参数显式叠加，
-  或用 entity_types 直接指定任意类型子集；
-- 枚举成员的字符串值即发送给 jev 的 Choice criteria 标签名
-  （全大写英文，语言无关）；
-- Entity 支持多类型：一个实体可同时具有多种类型（如国家既是政区
-  GPE 又是地点 LOC），types 按相关性（概率）降序排列；
-- 嵌套关联用 entity_tree() 派生而非内嵌 parent/children 引用：
-  偏移包含是派生事实，跨窗口合并后按输出重建，纯函数可测试。
+- 类型是数据不是代码：EntityType("BRAND", "A brand name.") 即可构造，
+  与内置类型平权进入类型表；
+- JSON 配置三段式（均可省略）：entity_types（新增/覆盖类型）、
+  entity_packs（定义包）、default_packs（默认启用的包名）；
+- Entity 支持多类型：types 为 (EntityType, probability) 元组序列，
+  按相关性（概率）降序排列。
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Self, cast
+from typing import Any, Self
 
 
-class EntityType(StrEnum):
-    """命名实体类型枚举。
+@dataclass(frozen=True)
+class EntityType:
+    """命名实体类型：一个标签与一段语义描述。
 
-    通用部分采用 OntoNotes 5.0 的十八类标准实体体系（PERSON..CARDINAL），
-    追加 MISC 作为其余具名专有名词的兜底类型；垂直领域部分（DISEASE..
-    PLATFORM）供对应领域实体包选用。枚举成员的字符串值就是发送给
-    jev 的 Choice criteria 标签。
+    开放式定义：不依赖封闭枚举，任意 label + description 组合都是
+    合法的实体类型。label 是发送给 jev 的 Choice criteria 标签
+    （建议全大写英文）；description 随请求 state 的类型表下发，
+    直接影响判定精度，应写给模型看。
+
+    Attributes:
+        label: 类型标签（如 "PERSON"、"BRAND"）。
+        description: 类型语义描述（发给 jev 的类型表条目）。
     """
 
-    # --- 通用（OntoNotes 5.0 + MISC） ---
-    PERSON = "PERSON"
-    NORP = "NORP"
-    FAC = "FAC"
-    ORG = "ORG"
-    GPE = "GPE"
-    LOC = "LOC"
-    PRODUCT = "PRODUCT"
-    EVENT = "EVENT"
-    WORK_OF_ART = "WORK_OF_ART"
-    LAW = "LAW"
-    LANGUAGE = "LANGUAGE"
-    DATE = "DATE"
-    TIME = "TIME"
-    PERCENT = "PERCENT"
-    MONEY = "MONEY"
-    QUANTITY = "QUANTITY"
-    ORDINAL = "ORDINAL"
-    CARDINAL = "CARDINAL"
-    MISC = "MISC"
-    # --- 生物医学 ---
-    DISEASE = "DISEASE"
-    DRUG = "DRUG"
-    GENE = "GENE"
-    PROTEIN = "PROTEIN"
-    CHEMICAL = "CHEMICAL"
-    # --- 金融 ---
-    TICKER = "TICKER"
-    STOCK_INDEX = "STOCK_INDEX"
-    CURRENCY = "CURRENCY"
-    # --- 软件科技 ---
-    SOFTWARE = "SOFTWARE"
-    PROTOCOL = "PROTOCOL"
-    PLATFORM = "PLATFORM"
+    label: str
+    description: str
+
+
+@dataclass(frozen=True)
+class EntityPack:
+    """实体包：一组实体类型的命名组合，调用方按需选择启用。
+
+    Attributes:
+        name: 包名（如 "CORE"、"BIOMED"）。
+        description: 包的适用场景说明。
+        entity_types: 包含的实体类型集合。
+    """
+
+    name: str
+    description: str
+    entity_types: frozenset[EntityType]
 
 
 class Gender(StrEnum):
@@ -85,194 +71,285 @@ class Gender(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
-ENTITY_TYPE_DESCRIPTIONS: dict[EntityType, str] = {
-    EntityType.PERSON: "A real or fictional person's name.",
-    EntityType.NORP: (
-        "A nationality, religious group, or political group "
-        "(e.g. Han Chinese, Muslims, Republicans)."
-    ),
-    EntityType.FAC: ("A built facility: airport, highway, bridge, tunnel, stadium, and the like."),
-    EntityType.ORG: (
-        "An organization: company, government body, school, hospital, sports team, and the like."
-    ),
-    EntityType.GPE: (
-        "A geo-political entity: a country, city, state, or other administrative region."
-    ),
-    EntityType.LOC: "A non-administrative location: mountain, river, sea, continent, and the like.",
-    EntityType.PRODUCT: ("A physical product: vehicle, weapon, food, device, and the like."),
-    EntityType.EVENT: (
-        "A named event: war, earthquake, conference, sports tournament, and the like."
-    ),
-    EntityType.WORK_OF_ART: "A title of a work: book, film, song, game, and the like.",
-    EntityType.LAW: "The name of a law or legal document.",
-    EntityType.LANGUAGE: "The name of a natural language (e.g. Mandarin, English).",
-    EntityType.DATE: (
-        "A date or date range, absolute (e.g. October 2023) or relative (e.g. yesterday)."
-    ),
-    EntityType.TIME: "A time of day smaller than a day (e.g. 9 a.m., 14:30).",
-    EntityType.PERCENT: "A percentage (e.g. 50%, thirty percent).",
-    EntityType.MONEY: (
-        "A monetary amount including the currency (e.g. 100 US dollars, five yuan)."
-    ),
-    EntityType.QUANTITY: (
-        "A non-monetary measurement: weight, distance, volume, temperature, and the like."
-    ),
-    EntityType.ORDINAL: "An ordinal number (e.g. first, 3rd, primary).",
-    EntityType.CARDINAL: "A bare quantity number (e.g. forty-seven, 2.5).",
-    EntityType.MISC: "A miscellaneous proper name that fits none of the above types.",
-    EntityType.DISEASE: "The name of a disease or syndrome (e.g. diabetes, COVID-19).",
-    EntityType.DRUG: "The name of a drug or medication (e.g. aspirin, metformin).",
-    EntityType.GENE: "The name of a gene (e.g. BRCA1, TP53).",
-    EntityType.PROTEIN: "The name of a protein (e.g. insulin, hemoglobin).",
-    EntityType.CHEMICAL: "The name of a chemical substance (e.g. ethanol, glucose).",
-    EntityType.TICKER: "A security ticker symbol (e.g. AAPL, 600519.SH).",
-    EntityType.STOCK_INDEX: "The name of a market index (e.g. the SSE Composite, the S&P 500).",
-    EntityType.CURRENCY: (
-        "The name of a currency (e.g. US dollar, euro), as distinct from a monetary amount."
-    ),
-    EntityType.SOFTWARE: (
-        "The name of a software program, library, or framework (e.g. Python, PyTorch)."
-    ),
-    EntityType.PROTOCOL: (
-        "The name of a network or communication protocol (e.g. HTTP, Bluetooth)."
-    ),
-    EntityType.PLATFORM: ("The name of a platform or online service (e.g. WeChat, AWS, GitHub)."),
+BUILTIN_ENTITY_TYPES: dict[str, EntityType] = {
+    label: EntityType(label, description)
+    for label, description in {
+        # --- 通用（OntoNotes 5.0 十八类 + MISC 兜底） ---
+        "PERSON": "A real or fictional person's name.",
+        "NORP": "A nationality, religious group, or political group.",
+        "FAC": "A built facility: airport, highway, bridge, stadium, and the like.",
+        "ORG": "An organization: company, government body, school, hospital, and the like.",
+        "GPE": "A geo-political entity: a country, city, state, or other administrative region.",
+        "LOC": "A non-administrative location: mountain, river, sea, continent, and the like.",
+        "PRODUCT": "A physical product: vehicle, weapon, food, device, and the like.",
+        "EVENT": "A named event: war, earthquake, conference, sports tournament, and the like.",
+        "WORK_OF_ART": "A title of a work: book, film, song, game, and the like.",
+        "LAW": "The name of a law or legal document.",
+        "LANGUAGE": "The name of a natural language (e.g. Mandarin, English).",
+        "DATE": "A date or date range, absolute (e.g. October 2023) or relative (e.g. yesterday).",
+        "TIME": "A time of day smaller than a day (e.g. 9 a.m., 14:30).",
+        "PERCENT": "A percentage (e.g. 50%, thirty percent).",
+        "MONEY": ("A monetary amount including the currency (e.g. 100 US dollars, five yuan)."),
+        "QUANTITY": (
+            "A non-monetary measurement: weight, distance, volume, temperature, and the like."
+        ),
+        "ORDINAL": "An ordinal number (e.g. first, 3rd, primary).",
+        "CARDINAL": "A bare quantity number (e.g. forty-seven, 2.5).",
+        "MISC": "A miscellaneous proper name that fits none of the above types.",
+        # --- 生物医学 ---
+        "DISEASE": "The name of a disease or syndrome (e.g. diabetes, COVID-19).",
+        "DRUG": "The name of a drug or medication (e.g. aspirin, metformin).",
+        "GENE": "The name of a gene (e.g. BRCA1, TP53).",
+        "PROTEIN": "The name of a protein (e.g. insulin, hemoglobin).",
+        "CHEMICAL": "The name of a chemical substance (e.g. ethanol, glucose).",
+        # --- 金融 ---
+        "TICKER": "A security ticker symbol (e.g. AAPL, 600519.SH).",
+        "STOCK_INDEX": "The name of a market index (e.g. the SSE Composite, the S&P 500).",
+        "CURRENCY": "The name of a currency (e.g. US dollar), as distinct from a monetary amount.",
+        # --- 软件科技 ---
+        "SOFTWARE": "The name of a software program, library, or framework (e.g. Python, PyTorch).",
+        "PROTOCOL": "The name of a network or communication protocol (e.g. HTTP, Bluetooth).",
+        "PLATFORM": "The name of a platform or online service (e.g. WeChat, AWS, GitHub).",
+    }.items()
 }
-"""全部实体类型的英文描述，随请求 state 下发给 jev 作为类型表。"""
+"""内置实体类型注册表：通用 + 四个垂直领域共 31 类，作为自定义扩展的基座。"""
 
 
-class EntityPack(StrEnum):
-    """实体包枚举：一组可选的实体类型集合，调用方按需选择。
+def _builtin_pack(name: str, description: str, labels: list[str]) -> EntityPack:
+    """由标签列表构建内置实体包（标签必须在内置类型表中）。"""
+    return EntityPack(
+        name=name,
+        description=description,
+        entity_types=frozenset(BUILTIN_ENTITY_TYPES[label] for label in labels),
+    )
 
-    每个成员的 value 即包名（大写英文），通过
-    EntityPack.CORE.entity_types 访问包内的实体类型集合。
+
+BUILTIN_ENTITY_PACKS: dict[str, EntityPack] = {
+    pack.name: pack
+    for pack in (
+        _builtin_pack(
+            "CORE",
+            "Base pack: the 18 OntoNotes 5.0 general types plus a MISC fallback.",
+            [
+                "PERSON",
+                "NORP",
+                "FAC",
+                "ORG",
+                "GPE",
+                "LOC",
+                "PRODUCT",
+                "EVENT",
+                "WORK_OF_ART",
+                "LAW",
+                "LANGUAGE",
+                "DATE",
+                "TIME",
+                "PERCENT",
+                "MONEY",
+                "QUANTITY",
+                "ORDINAL",
+                "CARDINAL",
+                "MISC",
+            ],
+        ),
+        _builtin_pack(
+            "BIOMED",
+            "Biomedical pack: diseases, drugs, genes, proteins, chemicals.",
+            ["DISEASE", "DRUG", "GENE", "PROTEIN", "CHEMICAL"],
+        ),
+        _builtin_pack(
+            "FINANCE",
+            "Finance pack: tickers, market indices, currency names.",
+            ["TICKER", "STOCK_INDEX", "CURRENCY"],
+        ),
+        _builtin_pack(
+            "TECH",
+            "Software pack: programs and libraries, protocols, platforms.",
+            ["SOFTWARE", "PROTOCOL", "PLATFORM"],
+        ),
+    )
+}
+"""内置实体包注册表：CORE 默认启用，三个垂直领域包按需叠加。"""
+
+
+@dataclass(frozen=True)
+class EntityTaxonomy:
+    """实体类型体系：类型注册表、包注册表与默认包选择。
+
+    一份 taxonomy 完整描述"有哪些类型、有哪些包、默认启用哪些包"，
+    是 JevNER 的全部类型语义来源。可由 JSON 构建（from_json），
+    供非程序员用户经数据文件扩展；代码侧也可直接构造。
+
+    Attributes:
+        entity_types: 标签到实体类型的注册表。
+        entity_packs: 包名到实体包的注册表。
+        default_packs: 默认启用的包名序列（JevNER 调用未显式
+            指定 entity_packs 时使用）。
     """
 
-    CORE = (
-        "CORE",
-        "基础实体包：OntoNotes 5.0 十八类通用实体 + MISC 兜底，适合一般文本",
-        frozenset(
+    entity_types: dict[str, EntityType]
+    entity_packs: dict[str, EntityPack]
+    default_packs: tuple[str, ...]
+
+    @classmethod
+    def from_json(cls, config: dict[str, Any] | str, base: Self | None = None) -> Self:
+        """从 JSON 配置构建实体类型体系（默认在内置体系上扩展）。
+
+        配置三段式（均可省略）::
+
             {
-                EntityType.PERSON,
-                EntityType.NORP,
-                EntityType.FAC,
-                EntityType.ORG,
-                EntityType.GPE,
-                EntityType.LOC,
-                EntityType.PRODUCT,
-                EntityType.EVENT,
-                EntityType.WORK_OF_ART,
-                EntityType.LAW,
-                EntityType.LANGUAGE,
-                EntityType.DATE,
-                EntityType.TIME,
-                EntityType.PERCENT,
-                EntityType.MONEY,
-                EntityType.QUANTITY,
-                EntityType.ORDINAL,
-                EntityType.CARDINAL,
-                EntityType.MISC,
+              "entity_types": {"BRAND": "A brand name."},        # 新增/覆盖类型
+              "entity_packs": {"ECOM": ["PERSON", "BRAND"]},      # 新增/覆盖包
+              "default_packs": ["CORE", "ECOM"]                  # 默认包
             }
-        ),
-    )
-    """基础实体包：默认启用，覆盖通用 NER 的全部标准类型。"""
 
-    BIOMED = (
-        "BIOMED",
-        "生物医学实体包：疾病、药物、基因、蛋白质、化学物质",
-        frozenset(
-            {
-                EntityType.DISEASE,
-                EntityType.DRUG,
-                EntityType.GENE,
-                EntityType.PROTEIN,
-                EntityType.CHEMICAL,
-            }
-        ),
-    )
-    """生物医学垂直领域实体包。"""
+        - entity_types：label → description 的映射，同 label 覆盖内置描述；
+        - entity_packs：包名 → 标签列表（或 {"description": ..., "entity_types": [...]})
+          的映射，引用的类型必须在合并后的类型表中存在；
+        - default_packs：默认启用的包名列表，缺省为 base 的默认包；
+        - config 也可传 JSON 字符串（自动解析）。
 
-    FINANCE = (
-        "FINANCE",
-        "金融实体包：证券代码、市场指数、货币名称",
-        frozenset(
-            {
-                EntityType.TICKER,
-                EntityType.STOCK_INDEX,
-                EntityType.CURRENCY,
-            }
-        ),
-    )
-    """金融垂直领域实体包。"""
+        Args:
+            config: JSON 配置字典或 JSON 字符串。
+            base: 扩展基座，None 时用内置体系（BUILTIN_*）。
 
-    TECH = (
-        "TECH",
-        "软件科技实体包：软件与库、网络协议、平台服务",
-        frozenset(
-            {
-                EntityType.SOFTWARE,
-                EntityType.PROTOCOL,
-                EntityType.PLATFORM,
-            }
-        ),
-    )
-    """软件科技垂直领域实体包。"""
+        Returns:
+            构建完成的实体类型体系。
 
-    # StrEnum 多值元组成员：首元素为字符串值，其余挂到下划线实例属性
-    # （公开只读 property 转发）。description/entity_types 带默认值，
-    # 使 EntityPack("CORE") 单参按值构造（枚举查找）在类型层也合法
-    def __new__(
-        cls, value: str, description: str = "", entity_types: frozenset = frozenset()
-    ) -> Self:
-        obj = str.__new__(cls, value)
-        obj._value_ = value
-        obj._description = description  # type: ignore[attr-defined]
-        obj._entity_types = entity_types  # type: ignore[attr-defined]
-        return cast(Self, obj)
+        Raises:
+            TypeError: config 既不是 dict 也不是 JSON 字符串。
+            ValueError: 配置结构非法——未知标签引用、空类型描述、
+                包内引用了不存在的类型等（错误信息含具体字段路径）。
+        """
+        if isinstance(config, str):
+            config = json.loads(config)
+        if not isinstance(config, dict):
+            raise TypeError(f"config must be a JSON dict or a JSON string, got {type(config)!r}.")
+        if base is None:
+            base = cls(
+                entity_types=dict(BUILTIN_ENTITY_TYPES),
+                entity_packs=dict(BUILTIN_ENTITY_PACKS),
+                default_packs=("CORE",),
+            )
+        entity_types = dict(base.entity_types)
+        entity_packs = dict(base.entity_packs)
+        # 解析 entity_types：label → description，覆盖或新增
+        custom_types = config.get("entity_types") or {}
+        if not isinstance(custom_types, dict):
+            raise ValueError(f'"entity_types" must be a JSON object, got {type(custom_types)!r}.')
+        for label, description in custom_types.items():
+            if not isinstance(label, str) or not label.strip():
+                raise ValueError(f"Entity type label must be a non-empty string, got {label!r}.")
+            if not isinstance(description, str) or not description.strip():
+                raise ValueError(f'Entity type "{label}" needs a non-empty description.')
+            entity_types[label] = EntityType(label=label, description=description)
+        # 解析 entity_packs：name → 标签列表（或对象形式带 description）
+        custom_packs = config.get("entity_packs") or {}
+        if not isinstance(custom_packs, dict):
+            raise ValueError(f'"entity_packs" must be a JSON object, got {type(custom_packs)!r}.')
+        for name, spec in custom_packs.items():
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f"Entity pack name must be a non-empty string, got {name!r}.")
+            if isinstance(spec, list):
+                description, labels = "", spec
+            elif isinstance(spec, dict):
+                description = spec.get("description", "")
+                labels = spec.get("entity_types", [])
+                if not isinstance(description, str):
+                    raise ValueError(f'Entity pack "{name}" description must be a string.')
+                if not isinstance(labels, list):
+                    raise ValueError(f'Entity pack "{name}" entity_types must be a list of labels.')
+            else:
+                raise ValueError(
+                    f'Entity pack "{name}" must be a label list or an object, got {type(spec)!r}.'
+                )
+            types: list[EntityType] = []
+            for label in labels:
+                if label not in entity_types:
+                    raise ValueError(f'Entity pack "{name}" references unknown type "{label}".')
+                types.append(entity_types[label])
+            entity_packs[name] = EntityPack(
+                name=name,
+                description=description,
+                entity_types=frozenset(types),
+            )
+        # 解析 default_packs
+        default_packs = config.get("default_packs")
+        if default_packs is None:
+            default_packs = list(base.default_packs)
+        if not isinstance(default_packs, list) or not all(
+            isinstance(p, str) for p in default_packs
+        ):
+            raise ValueError('"default_packs" must be a list of pack names.')
+        for name in default_packs:
+            if name not in entity_packs:
+                raise ValueError(f'"default_packs" references unknown pack "{name}".')
+        return cls(
+            entity_types=entity_types,
+            entity_packs=entity_packs,
+            default_packs=tuple(default_packs),
+        )
 
-    @property
-    def description(self) -> str:
-        """包的适用场景说明。"""
-        return str(self._description)  # type: ignore[attr-defined]
+    def resolve(
+        self,
+        entity_packs: Iterable[EntityPack | str] | None,
+        entity_types: Iterable[EntityType | str] | None,
+    ) -> tuple[EntityType, ...]:
+        """把包选择与显式类型叠加解析为最终类型序列（按 label 排序去重）。
 
-    @property
-    def entity_types(self) -> frozenset[EntityType]:
-        """包内包含的实体类型集合。"""
-        return cast("frozenset[EntityType]", self._entity_types)  # type: ignore[attr-defined]
+        Args:
+            entity_packs: 实体包（对象或包名）列表；None 时用默认包。
+            entity_types: 额外显式启用的类型（对象或标签），与包并集。
+
+        Returns:
+            去重后的类型序列，按 label 排序（保证 state 渲染稳定）。
+
+        Raises:
+            ValueError: 引用了体系外未注册的包名/类型标签，或解析结果为空。
+        """
+        if entity_packs is None:
+            packs = [self.entity_packs[name] for name in self.default_packs]
+        else:
+            packs = []
+            for pack in entity_packs:
+                packs.append(self._pack_of(pack))
+        resolved: dict[str, EntityType] = {}
+        for pack in packs:
+            for etype in pack.entity_types:
+                resolved[etype.label] = etype
+        if entity_types is not None:
+            for item in entity_types:
+                resolved[item.label if isinstance(item, EntityType) else item] = self._type_of(item)
+        if not resolved:
+            raise ValueError("Resolved entity types cannot be empty.")
+        return tuple(resolved[label] for label in sorted(resolved))
+
+    def _pack_of(self, pack: EntityPack | str) -> EntityPack:
+        """包名转包对象（对象原样返回，未知名抛 ValueError）。"""
+        if isinstance(pack, EntityPack):
+            return pack
+        if pack not in self.entity_packs:
+            raise ValueError(f'Unknown entity pack "{pack}".')
+        return self.entity_packs[pack]
+
+    def _type_of(self, item: EntityType | str) -> EntityType:
+        """类型标签转类型对象（对象原样返回，未知标签抛 ValueError）。"""
+        if isinstance(item, EntityType):
+            return item
+        if item not in self.entity_types:
+            raise ValueError(f'Unknown entity type "{item}".')
+        return self.entity_types[item]
 
 
-def resolve_entity_types(
-    entity_packs: Iterable[EntityPack | str] | None,
-    entity_types: Iterable[EntityType] | None,
-) -> set[EntityType]:
-    """把实体包选择与显式类型叠加解析为最终类型集合。
+DEFAULT_TAXONOMY = EntityTaxonomy(
+    entity_types=dict(BUILTIN_ENTITY_TYPES),
+    entity_packs=dict(BUILTIN_ENTITY_PACKS),
+    default_packs=("CORE",),
+)
+"""默认实体类型体系：内置类型 + 内置包，CORE 默认启用。"""
 
-    Args:
-        entity_packs: 实体包（枚举成员或名称字符串）列表；None 时用默认包 CORE。
-        entity_types: 额外显式指定的类型，与包并集叠加。
-
-    Returns:
-        最终启用的实体类型集合；始终非空。
-
-    Raises:
-        ValueError: entity_packs 中的名称字符串不是已注册的实体包，
-            或解析结果为空集合。
-    """
-    if entity_packs is None:
-        packs: list[EntityPack] = [EntityPack.CORE]
-    else:
-        packs = [
-            EntityPack(member) if isinstance(member, str) else member for member in entity_packs
-        ]
-    resolved: set[EntityType] = set()
-    for pack in packs:
-        resolved.update(pack.entity_types)
-    if entity_types is not None:
-        resolved.update(entity_types)
-    if not resolved:
-        raise ValueError("Resolved entity types cannot be empty.")
-    return resolved
-
+PERSON_LABEL = "PERSON"
+"""PERSON 类型标签：with_gender 时按此标签升级实体为 Person。"""
 
 NONE_LABEL = "NONE"
 """Choice 类型判定问题中的非实体选项标签。"""
@@ -382,7 +459,7 @@ def _render_node(node: EntityNode, prefix: str) -> list[str]:
 
 def _label(e: Entity) -> str:
     """单个实体的单行标签：文本、类型（概率降序）、性别与偏移区间。"""
-    parts = [e.text, "(" + " · ".join(f"{t.value} {p:.2f}" for t, p in e.types) + ")"]
+    parts = [e.text, "(" + " · ".join(f"{t.label} {p:.2f}" for t, p in e.types) + ")"]
     if isinstance(e, Person):
         parts.append(f"[{e.gender.value} {e.gender_probability:.2f}]")
     parts.append(f"[{e.start}:{e.end}]")

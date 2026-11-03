@@ -9,7 +9,7 @@
 - **多类型实体**：一个实体可同时具有多种类型（国家既是政区 GPE 又是地点 LOC），`types` 按相关性（概率）降序排列，不强制单一类型；`type`/`base_probability` 属性兼容单类型访问；
 - **无本地模型**：不加载任何神经网络权重，唯一推理依赖是 TypeSafe API（`jev-latest`）；
 - **随包分词器**：Qwen3 字节级 BPE 分词器（覆盖 100+ 语言含 CJK）打包在包内 `assets/`，无需访问 HuggingFace，无需 transformers/torch；
-- **实体包体系**：基础包 CORE（OntoNotes 十八类 + MISC）默认启用，垂直领域包 EntityPack.BIOMED/FINANCE/TECH 按需叠加；
+- **开放式类型体系**：实体类型与实体包不写死——内置 CORE/BIOMED/FINANCE/TEC 四包 31 类型仅是基座，任何用户（含非程序员的 C 端用户）可经 JSON 三段式配置（`entity_types`/`entity_packs`/`default_packs`）自定义新类型、新组合并设默认包，`EntityTaxonomy.from_json` 一行构建；
 - **嵌套实体树**：返回值即 `list[EntityNode]` 森林，偏移包含关系派生（交叉嵌套挂最近公共外层成兄弟），`print(node)` 直接得到可读树形，无需下游后处理；
 - **性别识别**：PERSON 实体自动附加性别判定（MALE/FEMALE/UNKNOWN），进程内 LRU 缓存；
 - **typesafe**：全量类型标注（`py.typed`），mypy 零错误，提示词按结构化提示词设计方法论（七层语义模型）经 prompt4py 渲染，ruff 全量格式化。
@@ -23,7 +23,7 @@ uv add jevner        # 或 pip install jevner
 ## 快速开始
 
 ```python
-from jevner import EntityPack, JevNER
+from jevner import EntityPack, EntityTaxonomy, JevNER
 
 ner = JevNER()  # 凭据读取环境变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL
 
@@ -41,6 +41,17 @@ forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", 
 # 二型糖尿病 (DISEASE 1.00) [5:10]
 # ├── 糖尿病 (DISEASE 0.99) [7:10]
 # 二甲双胍 (DRUG 1.00) [14:18]
+
+# C 端用户：JSON 三段式自定义类型体系（新增类型 BRAND + 新包 ECOM + 默认包切换）
+taxonomy = EntityTaxonomy.from_json("""
+{
+  "entity_types": {"BRAND": "A brand or trademark name (e.g. Apple, Nike)."},
+  "entity_packs": {"ECOM": ["PERSON", "ORG", "BRAND"]},
+  "default_packs": ["CORE", "ECOM"]
+}
+""")
+ner = JevNER(taxonomy=taxonomy)  # 之后全部调用默认按新体系识别
+forest = ner("Apple released the iPhone 17 Pro, and Nike sponsored it.")
 ```
 
 返回值是 `list[EntityNode]`：顶层（不被包含的实体）节点按 `(start, end)` 排序，`node.entity` 为实体本体，`node.children` 递归内层实体。`Entity.types` 是 `(EntityType, probability)` 元组序列（概率降序，一实体可多类型）；`Entity.type` / `base_probability` 取首项；`start` / `end` 是原文全局字符偏移（恒满足 `text == source[start:end]`），嵌套即由偏移包含关系派生。

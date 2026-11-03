@@ -18,7 +18,15 @@ EntityPack.FINANCE（金融）、EntityPack.TECH（软件科技）按需叠加�
 除 TypeSafe API 外没有任何模型下载或本地推理。
 """
 
-from jevner.entities import Entity, EntityNode, EntityPack, EntityType, Gender, Person
+from jevner.entities import (
+    Entity,
+    EntityNode,
+    EntityPack,
+    EntityTaxonomy,
+    EntityType,
+    Gender,
+    Person,
+)
 from jevner.ner import JevNER
 
 __version__ = "0.1.0"
@@ -28,6 +36,7 @@ __all__ = [
     "EntityNode",
     "EntityPack",
     "EntityType",
+    "EntityTaxonomy",
     "Gender",
     "JevNER",
     "Person",

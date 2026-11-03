@@ -34,21 +34,23 @@ import logging
 from collections.abc import Iterable
 from typing import Protocol, Self, cast
 
-from typesafe_sdk import Choice, Noul, TypeSafeClient
+from typesafe_sdk import Choice, Noul, RetryPolicy, TypeSafeClient
 from vortezwohl.cache import LRUCache
 from vortezwohl.concurrent import ThreadPool
 from vortezwohl.iter import batched
 
 from jevner.entities import (
+    DEFAULT_TAXONOMY,
     NONE_LABEL,
+    PERSON_LABEL,
     Entity,
     EntityNode,
     EntityPack,
+    EntityTaxonomy,
     EntityType,
     Gender,
     Person,
     entity_tree,
-    resolve_entity_types,
 )
 from jevner.prompt import render_detection_state, render_gender_state, render_typing_state
 from jevner.tokenizer import BundledTokenizer, strip_span
@@ -205,6 +207,7 @@ class JevNER:
         timeout: float | None = None,
         window_size: int = DEFAULT_WINDOW_SIZE,
         max_workers: int = DEFAULT_MAX_WORKERS,
+        taxonomy: EntityTaxonomy | None = None,
     ) -> None:
         """初始化识别器。
 
@@ -217,6 +220,9 @@ class JevNER:
             window_size: 滑动窗口大小（token 数），默认 24k
                 （jev per-question 32k 减余量）。
             max_workers: 窗口级并行的线程数；0 或 1 时退化为串行。
+            taxonomy: 实体类型体系（类型/包注册表与默认包），
+                None 时用内置体系；C 端用户可传
+                EntityTaxonomy.from_json(...) 的构建结果。
 
         Raises:
             ValueError: window_size 非正。
@@ -224,11 +230,21 @@ class JevNER:
         """
         if window_size < 1:
             raise ValueError(f"window_size ({window_size}) must be positive.")
+        # 重试策略：对 408/429/5xx 与连接类错误做 3 次指数退避重试
+        # （默认 RetryPolicy 总预算 30s 过短，实测服务端瞬态 500/520
+        # 会被过早放弃），总预算放开由 max_retries 封顶
         self._client = TypeSafeClient(
-            api_key=api_key, base_url=base_url, model=model_name, timeout=timeout
+            api_key=api_key,
+            base_url=base_url,
+            model=model_name,
+            timeout=timeout,
+            retry=RetryPolicy(max_retries=3, backoff_initial=1.0, backoff_max=8.0, timeout=None),
         )
         self._tokenizer = BundledTokenizer()
         self._window_size = window_size
+        # 实体类型体系：类型/包注册表与默认包，识别管线全部类型
+        # 语义的唯一来源；用户可经 JSON 扩展或覆盖
+        self._taxonomy = taxonomy if taxonomy is not None else DEFAULT_TAXONOMY
         # 窗口级并行线程池：多窗口（超长文本）并发提交检测与分型请求。
         # 线程安全性：httpx2.Client 底层为连接池，多线程共享安全。
         self._max_workers = max(1, max_workers)
@@ -411,7 +427,7 @@ class JevNER:
         self,
         window_text: str,
         tokens: list[tuple[int, int, str]],
-        entity_types: set[EntityType],
+        entity_types: tuple[EntityType, ...],
         prob_threshold: float,
     ) -> list[Entity]:
         """在单个窗口内完成检测与分型，返回实体列表。
@@ -476,9 +492,10 @@ class JevNER:
                 uncached.append((i, text))
         entities: list[Entity] = []
         state = render_typing_state(window_text, entity_types)
-        criteria: dict[str, str | None] = {
-            t.value: None for t in sorted(entity_types, key=lambda t: t.value)
-        }
+        # criteria 标签携带描述：开放式类型下描述即类型语义，
+        # 必须随问题下发给 jev（自定义类型如 BRAND 仅有标签无描述
+        # 则无法判定）
+        criteria: dict[str, str | None] = {t.label: t.description for t in entity_types}
         criteria[NONE_LABEL] = None
 
         def _type_batch(
@@ -513,19 +530,15 @@ class JevNER:
                 if primary_prob < prob_threshold:
                     batch[i] = ()
                     continue
-                try:
-                    best_per_type[EntityType(answer.choice)] = primary_prob
-                except ValueError:
-                    logger.warning("JevNER got unexpected entity label %r, dropped.", answer.choice)
-                    batch[i] = ()
-                    continue
+                primary = self._taxonomy._type_of(answer.choice)
+                best_per_type[primary] = primary_prob
                 for label, prob in answer.probabilities.items():
-                    if label == answer.choice or prob < SECONDARY_TYPE_THRESHOLD:
+                    # NONE 是否决选项不是实体类型，不进类型收集
+                    if label == NONE_LABEL or label == answer.choice:
                         continue
-                    try:
-                        etype = EntityType(label)
-                    except ValueError:
+                    if prob < SECONDARY_TYPE_THRESHOLD:
                         continue
+                    etype = self._taxonomy._type_of(label)
                     if etype not in best_per_type or prob > best_per_type[etype]:
                         best_per_type[etype] = float(prob)
                 batch[i] = tuple(sorted(best_per_type.items(), key=lambda kv: -kv[1]))
@@ -708,7 +721,9 @@ class JevNER:
         assert 0.0 <= prob_threshold <= 1.0, (
             f"prob_threshold ({prob_threshold}) must be within [0, 1]."
         )
-        types = resolve_entity_types(entity_packs, entity_types)
+        # 实体类型解析：包选择 + 显式类型叠加（taxonomy 是语义唯一来源；
+        # PERSON 之类固定语义标签在体系内注册，非 PERSON 不做性别判定）
+        types = self._taxonomy.resolve(entity_packs, entity_types)
         ws = window_size if window_size is not None else self._window_size
         st = stride if stride is not None else max(1, ws // DEFAULT_STRIDE_DIVISOR)
         if ws < 1 or st < 1:
@@ -742,8 +757,9 @@ class JevNER:
         entities: list[Entity] = [e for ents in window_entities for e in ents]
         merged = self._combine(entities, deduplicate)
         if with_gender:
-            # PERSON 实体升级为 Person（附带性别判定），再建树
-            names = [e.text for e in merged if e.type is EntityType.PERSON]
+            # PERSON 宇实升级为 Person（附带性别判定），再建树；
+            # PERSON 标签由 taxonomy 保证存在（开放体系的固定语义锚点）
+            names = [e.text for e in merged if e.type.label == PERSON_LABEL]
             genders = self._recognize_genders(names)
             merged = [
                 (
@@ -755,7 +771,7 @@ class JevNER:
                         gender=genders[e.text][0],
                         gender_probability=genders[e.text][1],
                     )
-                    if e.type is EntityType.PERSON and e.text in genders
+                    if e.type.label == PERSON_LABEL and e.text in genders
                     else e
                 )
                 for e in merged

@@ -2,17 +2,21 @@
 
 覆盖 JevNER 完整调用链：多类型实体、嵌套实体、垂直领域实体包、
 超长文本上下文窗口与性别识别（含缓存命中验证）。
+窗口级并行 4 路（性能实验结论的延迟甜点，高并发会触发服务端网关瞬态 500）。
 需要环境变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL，产生真实
 API 计费。语种覆盖另见 tests/test_languages.py。
 """
 
 from __future__ import annotations
 
-from jevner import EntityPack, EntityType, Gender, JevNER, Person
+from jevner import EntityPack, Gender, JevNER, Person
+from jevner.entities import DEFAULT_TAXONOMY
+
+T = DEFAULT_TAXONOMY.entity_types  # label → EntityType 查找表
 
 ZH_TEXT = "你好, 我的名字是吴子豪, 来自福建福州."
 
-ner = JevNER()
+ner = JevNER(max_workers=4)
 
 
 def show(forest: list) -> None:
@@ -80,11 +84,11 @@ forest = ner(nested_text, with_gender=False)
 show(forest)
 texts_types = {(n.entity.text, n.entity.type) for n in flatten(forest)}
 # 外层机构名必须完整保留
-assert ("Bank of America", EntityType.ORG) in texts_types, f"应保留嵌套外层 ORG: {forest}"
+assert ("Bank of America", T["ORG"]) in texts_types, f"应保留嵌套外层 ORG: {forest}"
 # 内层嵌套 GPE：America 或 New York 至少一个存在（含 children 层）
 nested_inner = [
-    ("America", EntityType.GPE),
-    ("New York", EntityType.GPE),
+    ("America", T["GPE"]),
+    ("New York", T["GPE"]),
 ]
 assert any(t in texts_types for t in nested_inner), f"应保留嵌套内层 GPE: {forest}"
 # 偏移不变式：实体文本必须是原文精确子串
@@ -107,7 +111,7 @@ for n in flatten(zh_forest):
         f"中文偏移不变式破坏: {n.entity}"
     )
 assert ("中华人民共和国外交部" in {n.entity.text for n in flatten(zh_forest)}) or (
-    EntityType.ORG in {n.entity.type for n in flatten(zh_forest)}
+    T["ORG"] in {n.entity.type for n in flatten(zh_forest)}
 ), f"中文嵌套至少应保留外层机构: {zh_forest}"
 
 print()
@@ -116,7 +120,7 @@ med_text = "患者确诊为二型糖尿病, 服用二甲双胍控制血糖, 并�
 forest = ner(med_text, entity_packs=[EntityPack.BIOMED], with_gender=False)
 show(forest)
 all_types = {t for n in forest for t, _ in n.entity.types}
-assert EntityType.DISEASE in all_types, f"应识别出疾病: {forest}"
+assert T["DISEASE"] in all_types, f"应识别出疾病: {forest}"
 # 药物允许词元级检测方差：二甲双胍 或其前缀/截断形态（甲双胍）任一命中即可
 med_texts = {n.entity.text for n in forest}
 assert any("双胍" in t for t in med_texts), f"应识别出药物（含词元方差形态）: {forest}"

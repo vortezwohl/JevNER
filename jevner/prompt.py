@@ -23,7 +23,7 @@ from typing import cast
 
 from prompt4py.template import GeneralTemplate
 
-from jevner.entities import ENTITY_TYPE_DESCRIPTIONS, EntityType
+from jevner.entities import EntityType
 
 
 def render_detection_state(source_text: str) -> str:
@@ -91,16 +91,18 @@ def render_detection_state(source_text: str) -> str:
     return cast(str, template.render(markdown=False))
 
 
-def render_typing_state(source_text: str, entity_types: set[EntityType]) -> str:
+def render_typing_state(source_text: str, entity_types: tuple[EntityType, ...]) -> str:
     """渲染实体分型请求的 state 提示词。
 
     Each question picks, as a Choice, the best entity type for
     INPUT.SPAN from CONTEXT.ENTITY_TYPES; NONE means the span is not
-    a named entity.
+    a named entity. 开放式类型下每个 EntityType 自带 label 与
+    description，类型表直接由参数生成（不再查全局描述表）。
 
     Args:
         source_text: 窗口原文（本请求全部问题的共享上下文）。
-        entity_types: 本次识别启用的实体类型集合（类型表写入 CONTEXT）。
+        entity_types: 本次识别启用的实体类型序列（已按 label 排序），
+            类型表写入 CONTEXT 下发。
 
     Returns:
         JSON 字符串形式的 state，供 system_one 请求使用。
@@ -125,10 +127,7 @@ def render_typing_state(source_text: str, entity_types: set[EntityType]) -> str:
         "unspaced scripts to right-to-left scripts."
     )
     template.context = {
-        "ENTITY_TYPES": {
-            t.value: ENTITY_TYPE_DESCRIPTIONS[t]
-            for t in sorted(entity_types, key=lambda t: t.value)
-        },
+        "ENTITY_TYPES": {t.label: t.description for t in entity_types},
         "note_on_nested_spans": (
             "A span may sit inside a longer entity. Type each span on its own "
             "content: the inner and the outer span answer separately."

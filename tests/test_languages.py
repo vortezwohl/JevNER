@@ -52,7 +52,7 @@ def flatten(nodes: list) -> list:
 
 
 def main() -> None:
-    ner = JevNER()
+    ner = JevNER(max_workers=4)
     failures: list[str] = []
     print("=" * 70)
     for lang, continent, text, expected in LANGUAGE_CASES:
