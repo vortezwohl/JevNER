@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Self, cast
 
 
 class EntityType(StrEnum):
@@ -140,96 +141,104 @@ ENTITY_TYPE_DESCRIPTIONS: dict[EntityType, str] = {
 """全部实体类型的英文描述，随请求 state 下发给 jev 作为类型表。"""
 
 
-@dataclass(frozen=True)
-class EntityPack:
-    """一组可选的实体类型集合（实体包）。
+class EntityPack(StrEnum):
+    """实体包枚举：一组可选的实体类型集合，调用方按需选择。
 
-    Attributes:
-        name: 包名（大写英文，调用方以此引用）。
-        description: 包的适用场景说明。
-        entity_types: 包含的实体类型集合。
+    每个成员的 value 即包名（大写英文），通过
+    EntityPack.CORE.entity_types 访问包内的实体类型集合。
     """
 
-    name: str
-    description: str
-    entity_types: frozenset[EntityType]
+    CORE = (
+        "CORE",
+        "基础实体包：OntoNotes 5.0 十八类通用实体 + MISC 兜底，适合一般文本",
+        frozenset(
+            {
+                EntityType.PERSON,
+                EntityType.NORP,
+                EntityType.FAC,
+                EntityType.ORG,
+                EntityType.GPE,
+                EntityType.LOC,
+                EntityType.PRODUCT,
+                EntityType.EVENT,
+                EntityType.WORK_OF_ART,
+                EntityType.LAW,
+                EntityType.LANGUAGE,
+                EntityType.DATE,
+                EntityType.TIME,
+                EntityType.PERCENT,
+                EntityType.MONEY,
+                EntityType.QUANTITY,
+                EntityType.ORDINAL,
+                EntityType.CARDINAL,
+                EntityType.MISC,
+            }
+        ),
+    )
+    """基础实体包：默认启用，覆盖通用 NER 的全部标准类型。"""
 
+    BIOMED = (
+        "BIOMED",
+        "生物医学实体包：疾病、药物、基因、蛋白质、化学物质",
+        frozenset(
+            {
+                EntityType.DISEASE,
+                EntityType.DRUG,
+                EntityType.GENE,
+                EntityType.PROTEIN,
+                EntityType.CHEMICAL,
+            }
+        ),
+    )
+    """生物医学垂直领域实体包。"""
 
-CORE = EntityPack(
-    name="CORE",
-    description="基础实体包：OntoNotes 5.0 十八类通用实体 + MISC 兜底，适合一般文本",
-    entity_types=frozenset(
-        {
-            EntityType.PERSON,
-            EntityType.NORP,
-            EntityType.FAC,
-            EntityType.ORG,
-            EntityType.GPE,
-            EntityType.LOC,
-            EntityType.PRODUCT,
-            EntityType.EVENT,
-            EntityType.WORK_OF_ART,
-            EntityType.LAW,
-            EntityType.LANGUAGE,
-            EntityType.DATE,
-            EntityType.TIME,
-            EntityType.PERCENT,
-            EntityType.MONEY,
-            EntityType.QUANTITY,
-            EntityType.ORDINAL,
-            EntityType.CARDINAL,
-            EntityType.MISC,
-        }
-    ),
-)
-"""基础实体包：默认启用，覆盖通用 NER 的全部标准类型。"""
+    FINANCE = (
+        "FINANCE",
+        "金融实体包：证券代码、市场指数、货币名称",
+        frozenset(
+            {
+                EntityType.TICKER,
+                EntityType.STOCK_INDEX,
+                EntityType.CURRENCY,
+            }
+        ),
+    )
+    """金融垂直领域实体包。"""
 
-BIOMED = EntityPack(
-    name="BIOMED",
-    description="生物医学实体包：疾病、药物、基因、蛋白质、化学物质",
-    entity_types=frozenset(
-        {
-            EntityType.DISEASE,
-            EntityType.DRUG,
-            EntityType.GENE,
-            EntityType.PROTEIN,
-            EntityType.CHEMICAL,
-        }
-    ),
-)
-"""生物医学垂直领域实体包。"""
+    TECH = (
+        "TECH",
+        "软件科技实体包：软件与库、网络协议、平台服务",
+        frozenset(
+            {
+                EntityType.SOFTWARE,
+                EntityType.PROTOCOL,
+                EntityType.PLATFORM,
+            }
+        ),
+    )
+    """软件科技垂直领域实体包。"""
 
-FINANCE = EntityPack(
-    name="FINANCE",
-    description="金融实体包：证券代码、市场指数、货币名称",
-    entity_types=frozenset(
-        {
-            EntityType.TICKER,
-            EntityType.STOCK_INDEX,
-            EntityType.CURRENCY,
-        }
-    ),
-)
-"""金融垂直领域实体包。"""
+    # StrEnum 多值元组成员：首元素为字符串值，其余挂到下划线实例属性
+    # （公开只读 property 转发）。description/entity_types 带默认值，
+    # 使 EntityPack("CORE") 单参按值构造（枚举查找）在类型层也合法
+    def __new__(
+        cls, value: str, description: str = "", entity_types: frozenset = frozenset()
+    ) -> Self:
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        obj._description = description  # type: ignore[attr-defined]
+        obj._entity_types = entity_types  # type: ignore[attr-defined]
+        return cast(Self, obj)
 
-TECH = EntityPack(
-    name="TECH",
-    description="软件科技实体包：软件与库、网络协议、平台服务",
-    entity_types=frozenset(
-        {
-            EntityType.SOFTWARE,
-            EntityType.PROTOCOL,
-            EntityType.PLATFORM,
-        }
-    ),
-)
-"""软件科技垂直领域实体包。"""
+    @property
+    def description(self) -> str:
+        """包的适用场景说明。"""
+        return str(self._description)  # type: ignore[attr-defined]
 
-ENTITY_PACKS: dict[str, EntityPack] = {pack.name: pack for pack in (CORE, BIOMED, FINANCE, TECH)}
-"""全部实体包的名字注册表。"""
-
-DEFAULT_PACKS: tuple[EntityPack, ...] = (CORE,)
-"""默认启用的实体包：仅基础包。"""
+    @property
+    def entity_types(self) -> frozenset[EntityType]:
+        """包内包含的实体类型集合。"""
+        return cast("frozenset[EntityType]", self._entity_types)  # type: ignore[attr-defined]
 
 
 def resolve_entity_types(
@@ -239,20 +248,22 @@ def resolve_entity_types(
     """把实体包选择与显式类型叠加解析为最终类型集合。
 
     Args:
-        entity_packs: 实体包（对象或名称字符串）列表；None 时用默认包。
+        entity_packs: 实体包（枚举成员或名称字符串）列表；None 时用默认包 CORE。
         entity_types: 额外显式指定的类型，与包并集叠加。
 
     Returns:
         最终启用的实体类型集合；始终非空。
 
     Raises:
-        KeyError: entity_packs 中的名称字符串未注册。
-        ValueError: 解析结果为空集合。
+        ValueError: entity_packs 中的名称字符串不是已注册的实体包，
+            或解析结果为空集合。
     """
     if entity_packs is None:
-        packs: list[EntityPack] = list(DEFAULT_PACKS)
+        packs: list[EntityPack] = [EntityPack.CORE]
     else:
-        packs = [ENTITY_PACKS[pack] if isinstance(pack, str) else pack for pack in entity_packs]
+        packs = [
+            EntityPack(member) if isinstance(member, str) else member for member in entity_packs
+        ]
     resolved: set[EntityType] = set()
     for pack in packs:
         resolved.update(pack.entity_types)

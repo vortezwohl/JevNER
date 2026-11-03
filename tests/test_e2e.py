@@ -8,14 +8,7 @@ API 计费。语种覆盖另见 tests/test_languages.py。
 
 from __future__ import annotations
 
-from jevner import (
-    BIOMED,
-    EntityPack,
-    EntityType,
-    Gender,
-    JevNER,
-    Person,
-)
+from jevner import EntityPack, EntityType, Gender, JevNER, Person
 
 ZH_TEXT = "你好, 我的名字是吴子豪, 来自福建福州."
 
@@ -120,7 +113,7 @@ assert ("中华人民共和国外交部" in {n.entity.text for n in flatten(zh_f
 print()
 print("===== [4] 垂直领域实体包 (BIOMED) =====")
 med_text = "患者确诊为二型糖尿病, 服用二甲双胍控制血糖, 并检测了 BRCA1 基因与胰岛素水平."
-forest = ner(med_text, entity_packs=[BIOMED], with_gender=False)
+forest = ner(med_text, entity_packs=[EntityPack.BIOMED], with_gender=False)
 show(forest)
 all_types = {t for n in forest for t, _ in n.entity.types}
 assert EntityType.DISEASE in all_types, f"应识别出疾病: {forest}"
@@ -152,7 +145,7 @@ assert ner("", with_gender=False) == [], "空文本应返回空列表"
 assert ner("   ", with_gender=False) == [], "纯空白应返回空列表"
 forest = ner(ZH_TEXT, with_gender=False)
 assert all(not isinstance(n.entity, Person) for n in forest), "with_gender=False 时不应有 Person"
-pack: EntityPack = BIOMED
+pack: EntityPack = EntityPack.BIOMED
 ner("苹果公司发布了新产品", entity_packs=[pack], with_gender=False)
 # 性别缓存命中（[1] 已判定过吴子豪）
 assert ner._gender_cache.read("吴子豪") is not None, "缓存应命中"

@@ -697,8 +697,8 @@ class JevNER:
 
         Raises:
             AssertionError: prob_threshold 不在 [0, 1] 内。
-            ValueError: 实体类型解析为空或窗口参数非法。
-            KeyError: entity_packs 中的名称字符串未注册。
+            ValueError: entity_packs 中的名称字符串不是已注册的实体包、
+                实体类型解析为空或窗口参数非法。
             TypeSafeError: 请求构造失败（如凭据缺失）。
             TypeSafeAPIError: API 返回错误响应。
             TypeSafeAPIConnectionError: 网络连接失败。

@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 
-from jevner import JevNER
+from jevner import EntityPack, JevNER
 
 load_dotenv()
 
@@ -21,7 +21,7 @@ print(forest[0])
 # Japan (GPE 1.00) [10:15]
 
 # 嵌套关系内含于返回值：福建福州 的内层是 福建/福州
-forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=["BIOMED"])
+forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=[EntityPack.BIOMED])
 for node in forest:
     print(node)
 # 二型糖尿病 (DISEASE 1.00) [5:10]

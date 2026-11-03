@@ -9,7 +9,7 @@
 - **多类型实体**：一个实体可同时具有多种类型（国家既是政区 GPE 又是地点 LOC），`types` 按相关性（概率）降序排列，不强制单一类型；`type`/`base_probability` 属性兼容单类型访问；
 - **无本地模型**：不加载任何神经网络权重，唯一推理依赖是 TypeSafe API（`jev-latest`）；
 - **随包分词器**：Qwen3 字节级 BPE 分词器（覆盖 100+ 语言含 CJK）打包在包内 `assets/`，无需访问 HuggingFace，无需 transformers/torch；
-- **实体包体系**：基础包 CORE（OntoNotes 十八类 + MISC）默认启用，垂直领域包 BIOMED（疾病/药物/基因/蛋白质/化学）、FINANCE（证券/指数/货币）、TECH（软件/协议/平台）按需叠加；
+- **实体包体系**：基础包 CORE（OntoNotes 十八类 + MISC）默认启用，垂直领域包 EntityPack.BIOMED/FINANCE/TECH 按需叠加；
 - **嵌套实体树**：返回值即 `list[EntityNode]` 森林，偏移包含关系派生（交叉嵌套挂最近公共外层成兄弟），`print(node)` 直接得到可读树形，无需下游后处理；
 - **性别识别**：PERSON 实体自动附加性别判定（MALE/FEMALE/UNKNOWN），进程内 LRU 缓存；
 - **typesafe**：全量类型标注（`py.typed`），mypy 零错误，提示词按结构化提示词设计方法论（七层语义模型）经 prompt4py 渲染，ruff 全量格式化。
@@ -23,7 +23,7 @@ uv add jevner        # 或 pip install jevner
 ## 快速开始
 
 ```python
-from jevner import JevNER
+from jevner import EntityPack, JevNER
 
 ner = JevNER()  # 凭据读取环境变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL
 
@@ -37,7 +37,7 @@ for node in forest:
 # └── 福州 (GPE 1.00) [18:20]
 
 # 垂直领域：生物医学实体包
-forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=["BIOMED"])
+forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=[EntityPack.BIOMED])
 # 二型糖尿病 (DISEASE 1.00) [5:10]
 # ├── 糖尿病 (DISEASE 0.99) [7:10]
 # 二甲双胍 (DRUG 1.00) [14:18]
@@ -58,7 +58,7 @@ ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
 
 | 参数 | 说明 |
 | --- | --- |
-| `entity_packs` | 实体包列表（对象或名称字符串），缺省 `["CORE"]`；可传 `["CORE", "BIOMED"]` 叠加 |
+| `entity_packs` | `EntityPack` 成员列表（或名称字符串），缺省 CORE；可传 `[EntityPack.CORE, EntityPack.BIOMED]` 叠加 |
 | `entity_types` | 额外显式启用的 `EntityType`，与包并集叠加 |
 | `with_gender` | 是否对 PERSON 实体附加性别判定 |
 | `prob_threshold` | 主类型概率过滤阈值，[0, 1]，默认 0.5 |

@@ -11,11 +11,8 @@ from __future__ import annotations
 import pytest
 
 from jevner.entities import (
-    BIOMED,
-    CORE,
-    ENTITY_PACKS,
-    TECH,
     Entity,
+    EntityPack,
     EntityType,
     Gender,
     Person,
@@ -79,18 +76,25 @@ for probe in (",,", "。北京。", "  ", "a，b"):
 assert strip_edge_punctuation("子豪,") == "子豪"
 print("[6] 偏移同步剥离不变式: OK")
 
-# 实体包解析：默认包 / 名称字符串 / 对象 / 显式类型叠加
+# 实体包枚举：StrEnum 语义 + 解析（默认包 / 名称字符串 / 成员 / 显式类型叠加）
+assert EntityPack.CORE.value == "CORE" and EntityPack.CORE.name == "CORE"
+assert isinstance(EntityPack.CORE, str), "StrEnum 成员应是 str"
 default_types = resolve_entity_types(entity_packs=None, entity_types=None)
-assert default_types == set(CORE.entity_types), "默认应启用 CORE 基础包"
+assert default_types == set(EntityPack.CORE.entity_types), "默认应启用 CORE 基础包"
 assert len(default_types) == 19, f"CORE 应含 19 类, got {len(default_types)}"
-mixed = resolve_entity_types(entity_packs=["BIOMED", TECH], entity_types={EntityType.PERSON})
-assert mixed == set(BIOMED.entity_types) | set(TECH.entity_types) | {EntityType.PERSON}
-assert ENTITY_PACKS["CORE"] is CORE and ENTITY_PACKS["FINANCE"].name == "FINANCE"
-with pytest.raises(KeyError):
+mixed = resolve_entity_types(
+    entity_packs=[EntityPack.BIOMED, EntityPack.TECH], entity_types={EntityType.PERSON}
+)
+assert mixed == set(EntityPack.BIOMED.entity_types) | set(EntityPack.TECH.entity_types) | {
+    EntityType.PERSON
+}
+by_name = EntityPack("FINANCE")
+assert by_name is EntityPack.FINANCE, "名称字符串应可转枚举成员"
+with pytest.raises(ValueError):
     resolve_entity_types(entity_packs=["NOT_EXIST"], entity_types=None)
 with pytest.raises(ValueError):
     resolve_entity_types(entity_packs=[], entity_types=[])
-print("[7] 实体包解析: OK")
+print("[7] 实体包枚举与解析: OK")
 
 # 多类型 Entity 语义：types 降序 + type/base_probability 属性兼容
 multi = Entity(
