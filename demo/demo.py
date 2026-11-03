@@ -2,7 +2,7 @@ from pprint import pp
 
 from dotenv import load_dotenv
 
-from jevner import EntityPack, EntityTaxonomy, JevNER
+from jevner import EntityTaxonomy, JevNER
 
 load_dotenv()
 
@@ -22,8 +22,8 @@ forest = ner("I visited Japan last year and loved Tokyo.")
 pp(forest)
 # Japan (GPE 1.00) [10:15]
 
-# 垂直领域：生物医学实体包
-forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=[EntityPack.BIOMED])
+# 垂直领域：按名称启用生物医学实体包
+forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=["BIOMED"])
 pp(forest)
 # 二型糖尿病 (DISEASE 1.00) [5:10]
 
@@ -40,4 +40,4 @@ taxonomy = EntityTaxonomy.from_json(
 ner = JevNER(taxonomy=taxonomy)
 forest = ner("Apple released the iPhone 17 Pro, and Nike sponsored it.")
 pp(forest)
-# EntityNode(entity=Entity(text='Apple', types=((BRAND, 0.9), (ORG, 0.4)), ...), ...)
+# EntityNode(entity=Entity(text='Apple', types=((BRAND, 0.9), ...)), ...)

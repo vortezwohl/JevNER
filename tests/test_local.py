@@ -19,7 +19,13 @@ from jevner.entities import (
     Person,
     entity_tree,
 )
-from jevner.ner import DEFAULT_WINDOW_SIZE, QUESTION_CONTEXT_LIMIT, QUESTION_HEADROOM, JevNER
+from jevner.ner import (
+    BYTES_PER_TOKEN_WORST,
+    DEFAULT_WINDOW_SIZE,
+    REQUEST_MAX_BYTES,
+    REQUEST_STATE_BUDGET,
+    JevNER,
+)
 from jevner.tokenizer import BundledTokenizer, strip_edge_punctuation, strip_span
 
 # 中文（无空格）+ 泰文（无空格复杂 cluster）+ 阿拉伯文（RTL）
@@ -43,13 +49,13 @@ for text in (ZH_TEXT, TH_TEXT, AR_TEXT):
         assert text[start:end] == tok, f"词元偏移不一致: {tok!r} vs {text[start:end]!r}"
 print("[3] 词元偏移一致性: OK")
 
-# 短文本：整段单窗口；默认窗口为 jev per-question 限制减余量
-assert DEFAULT_WINDOW_SIZE == QUESTION_CONTEXT_LIMIT - QUESTION_HEADROOM
-assert QUESTION_CONTEXT_LIMIT == 32_768 and QUESTION_HEADROOM == 8_192
+# 短文本：整段单窗口；默认窗口按 65,535 字节请求体预算换算
+assert DEFAULT_WINDOW_SIZE == REQUEST_STATE_BUDGET // BYTES_PER_TOKEN_WORST == 12_000
+assert REQUEST_MAX_BYTES == 65_535, "服务端请求体硬限制"
 wins = tokenizer.windows(ZH_TEXT, window_size=128, stride=64)
 assert len(wins) == 1, "短文本应为单一整段窗口"
 assert wins[0][0] == ZH_TEXT and len(wins[0][1]) == counts[ZH_TEXT], "窗口文本应为原文"
-print(f"[4] 短文本单窗口 + 24k 默认窗口常量 ({DEFAULT_WINDOW_SIZE} token): OK")
+print(f"[4] 短文本单窗口 + 12k 默认窗口常量 ({DEFAULT_WINDOW_SIZE} token): OK")
 
 # 长文本：多窗口 + 重叠 + 关键实体覆盖；偏移全部锚定原文
 long_zh = "。".join(f"第{i}句话提到北京和上海以及腾讯公司" for i in range(80))

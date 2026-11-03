@@ -68,20 +68,42 @@ token；不携带时默认 64k/32k。分型 state 含完整类型表，超长窗
 （64k 以上）依赖该头；常规窗口下它只作保险，无副作用。
 """
 
-QUESTION_CONTEXT_LIMIT = 32_768
-"""jev-latest 的 per-question 上下文上限（token 数）。"""
+REQUEST_MAX_BYTES = 65_535
+"""单个 system_one 请求体（prompt）的字节硬上限（服务端限制）。
 
-QUESTION_HEADROOM = 8_192
-"""窗口之外为问题、类型表与 JSON 结构预留的 token 余量。"""
+请求体 = state JSON + 全部问题 JSON。超限请求被服务端拒绝
+（实测 500/网关熔断），且难以从报错定位——因此在设计上保证
+任意请求不超：窗口按字节预算切分（REQUEST_STATE_BUDGET），
+分型 criteria 只携带标签不携带描述（描述仅在 state 类型表出现一次）。
+"""
 
-DEFAULT_WINDOW_SIZE = QUESTION_CONTEXT_LIMIT - QUESTION_HEADROOM
-"""默认滑动窗口大小（token 数）：32k 减余量 = 24k。
+BYTES_PER_TOKEN_WORST = 4
+"""按 UTF-8 最坏情况估算的每 token 字节数。
 
-窗口受 jev per-question 限制（state + 任一问题 ≤ 32k）约束：
-窗口取 24k，为问题载荷（词元文本 + 邻近词元 + 类型表 JSON）
-留 8k 余量，保证单问题判定永不超限。超长文本（如百万级 token）
-由滑动窗口 + 窗口级并行处理：每窗 24k token、相邻 50% 重叠，
-窗口间在线程池上并发提交，吞吐随并发数扩展。
+中文一字一 token 约 3 字节，英文子词平均约 4 字节，取 4 为
+统一安全上界，用于把窗口字节预算换算为 token 窗口大小。
+"""
+
+REQUEST_STATE_BUDGET = 48_000
+"""窗口文本在请求体中的字节预算。
+
+请求体 65,535 字节减去分型类型表（约 2KB）、问题批次（每问
+约 150~250 字节 × 批次 64 ≈ 16KB）与 JSON 结构开销后，留给
+窗口文本的安全预算。检测与分型共用同一窗口，按两者中更紧的
+分型预算取值。
+"""
+
+DEFAULT_WINDOW_SIZE = REQUEST_STATE_BUDGET // BYTES_PER_TOKEN_WORST
+"""默认滑动窗口大小（token 数）：字节预算 ÷ 最坏字节/token = 12k。
+
+窗口同时受两种上限约束，取更紧者：
+- 请求体字节数 ≤ 65,535（硬限制，见 REQUEST_MAX_BYTES）：中文
+  UTF-8 每字 3 字节、英文每 token 约 4 字节，12k token 窗口
+  最坏 48KB 文本 + 批次问题与结构开销，仍在预算内；
+- jev per-question 上下文 32k token：12k 窗口留足余量。
+
+超长文本（如百万级 token）由滑动窗口 + 窗口级并行处理：
+每窗 12k token、相邻 50% 重叠，窗口间在线程池上并发提交。
 """
 
 DEFAULT_STRIDE_DIVISOR = 2
@@ -492,10 +514,12 @@ class JevNER:
                 uncached.append((i, text))
         entities: list[Entity] = []
         state = render_typing_state(window_text, entity_types)
-        # criteria 标签携带描述：开放式类型下描述即类型语义，
-        # 必须随问题下发给 jev（自定义类型如 BRAND 仅有标签无描述
-        # 则无法判定）
-        criteria: dict[str, str | None] = {t.label: t.description for t in entity_types}
+        # criteria 只携带标签不携带描述：类型描述已在 state 的
+        # ENTITY_TYPES 表中出现一次（每问重复描述会把单问题从约
+        # 150 字节膨胀到约 2KB，64 问一批即约 128KB，超过服务端
+        # 65,535 字节请求体硬上限——实测 [3] 稳定 500 即此原因）。
+        # 标签命名与类型表键一致，模型按键查表语义判定。
+        criteria: dict[str, str | None] = {t.label: None for t in entity_types}
         criteria[NONE_LABEL] = None
 
         def _type_batch(
@@ -736,6 +760,16 @@ class JevNER:
             windows = [(s, self._tokenizer.window_tokens(s))]
         else:
             windows = self._tokenizer.windows(s, ws, st)
+        # 请求体字节防护：窗口文本是请求体的大头，超预算直接报错
+        # （服务端 65,535 字节硬限制的超限请求是 500，报错不指向
+        # 根因，这里给出可操作的指引）
+        for window_text, _toks in windows:
+            if len(window_text.encode("utf-8")) > REQUEST_STATE_BUDGET:
+                raise ValueError(
+                    "A sliding window's UTF-8 size exceeds the request body budget "
+                    f"({REQUEST_STATE_BUDGET} bytes of {REQUEST_MAX_BYTES} allowed). "
+                    f"Use a smaller window_size (current {ws} tokens)."
+                )
         # 窗口级并行：每窗独立完成检测 + 分型（检测/分型批已在
         # 线程池上并发），窗口间再并发提交；串行配置或单窗口退化为顺序执行
         if len(windows) <= 1 or self._max_workers <= 1:

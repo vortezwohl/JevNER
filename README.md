@@ -5,7 +5,7 @@
 ## 特性
 
 - **全球语种**：词元检测 + 区间分型两阶段算法，不依赖固定 n-gram 假设；实测覆盖亚洲/欧洲/美洲 24 语种（汉/日/韩/泰/越/印尼/马来/菲律宾/印地/阿拉伯/希伯来/土耳其 + 英法德西葡意俄荷波 + 美洲三语），无空格文字与粘着语均正确识别；
-- **上下文窗口**：默认窗口 24k token（受 jev per-question 32k 上限约束），超长文本由滑动窗口 + 窗口级并行处理；
+- **上下文窗口**：默认窗口 12k token（按 65,535 字节请求体硬限制换算），超长文本由滑动窗口 + 窗口级并行处理；
 - **多类型实体**：一个实体可同时具有多种类型（国家既是政区 GPE 又是地点 LOC），`types` 按相关性（概率）降序排列，不强制单一类型；`type`/`base_probability` 属性兼容单类型访问；
 - **无本地模型**：不加载任何神经网络权重，唯一推理依赖是 TypeSafe API（`jev-latest`）；
 - **随包分词器**：Qwen3 字节级 BPE 分词器（覆盖 100+ 语言含 CJK）打包在包内 `assets/`，无需访问 HuggingFace，无需 transformers/torch；
@@ -37,7 +37,7 @@ for node in forest:
 # └── 福州 (GPE 1.00) [18:20]
 
 # 垂直领域：生物医学实体包
-forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=[EntityPack.BIOMED])
+forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=["BIOMED"])
 # 二型糖尿病 (DISEASE 1.00) [5:10]
 # ├── 糖尿病 (DISEASE 0.99) [7:10]
 # 二甲双胍 (DRUG 1.00) [14:18]
@@ -60,7 +60,7 @@ forest = ner("Apple released the iPhone 17 Pro, and Nike sponsored it.")
 
 ```python
 JevNER(model_name="jev-latest", *, api_key=None, base_url=None, timeout=None,
-       window_size=24576)  # jev per-question 上限 32k 减问题余量
+       window_size=12000)  # 按 65,535 字节请求体预算换算
 
 ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
     prob_threshold=0.5, fast_mode=False, window_size=None, stride=None,
@@ -69,17 +69,17 @@ ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
 
 | 参数 | 说明 |
 | --- | --- |
-| `entity_packs` | `EntityPack` 成员列表（或名称字符串），缺省 CORE；可传 `[EntityPack.CORE, EntityPack.BIOMED]` 叠加 |
+| `entity_packs` | 实体包名（或 `EntityPack` 对象）列表，缺省 `["CORE"]`；可传 `["CORE", "BIOMED"]` 叠加 |
 | `entity_types` | 额外显式启用的 `EntityType`，与包并集叠加 |
 | `with_gender` | 是否对 PERSON 实体附加性别判定 |
 | `prob_threshold` | 主类型概率过滤阈值，[0, 1]，默认 0.5 |
 | `fast_mode` | `True` 时整段单窗口直接判定（要求文本在 jev 上下文限制内） |
-| `window_size` / `stride` | 滑动窗口大小与步长（token 数），默认 24k / 窗口一半 |
+| `window_size` / `stride` | 滑动窗口大小与步长（token 数），默认 12k / 窗口一半 |
 
 ## 算法
 
 ```
-原文 ──Qwen3 分词──> 原文偏移词元 ──滑动窗口(24k, 50% 重叠)──> 原文区间窗口
+原文 ──Qwen3 分词──> 原文偏移词元 ──滑动窗口(12k, 50% 重叠)──> 原文区间窗口
                                                         │
      检测：逐词元 Noul（"是否为命名实体组成部分"，带左右邻近词元，
            灰色区二次复检）→ 命中词元 → 双策略区间（严格连续 + 容差桥接并集）
@@ -94,7 +94,7 @@ ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
      PERSON → Choice(MALE/FEMALE/UNKNOWN) 性别判定（LRU 缓存）
 ```
 
-与 BertNER 的对应：本地 BERT token 级 BIO 预测 → jev 词元 Noul 检测 + 子 span Choice 分型；固定 n-gram 候选 → 检测区间驱动子 span；448 token 小窗口 → 24k token 窗口 + 窗口级并行；单类型输出 → 多类型按相关性排序输出；平铺列表 → 原文偏移锚定 + entity_tree 嵌套树；`Davlan/xlm-roberta-base-ner-hrl` → `jev-latest`。
+与 BertNER 的对应：本地 BERT token 级 BIO 预测 → jev 词元 Noul 检测 + 子 span Choice 分型；固定 n-gram 候选 → 检测区间驱动子 span；448 token 小窗口 → 12k token 窗口 + 窗口级并行；单类型输出 → 多类型按相关性排序输出；平铺列表 → 原文偏移锚定 + entity_tree 嵌套树；`Davlan/xlm-roberta-base-ner-hrl` → `jev-latest`。
 
 ## 测试
 
