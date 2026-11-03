@@ -9,9 +9,9 @@
    类型表只下发所选包的并集，控制请求体积与判定精度；
 3. Entity/Person 结果 dataclass 与 Gender 枚举：Entity 携带原文
    全局偏移 start/end（保证 text == source[start:end]）；
-4. EntityNode/entity_tree/format_entity_tree：依据偏移包含关系把
-   平铺实体重建为嵌套树并渲染，嵌套关联（如 GPE"福建"内嵌于
-   GPE"福建福州"）由偏移锚定，可靠且可读。
+4. EntityNode/entity_tree：JevNER 的返回即嵌套森林，依据偏移包含
+   关系派生树结构（交叉嵌套挂最近公共外层成兄弟），EntityNode 的
+   __str__ 直接渲染可读树形。
 
 调用方与维护者进入本文件时最需要先知道：
 - 默认只启用 CORE 基础包；垂直领域通过 entity_packs 参数显式叠加，
@@ -320,9 +320,8 @@ class Person(Entity):
 class EntityNode:
     """实体嵌套树节点：一个实体与其全部内层子实体。
 
-    由 entity_tree() 依据偏移包含关系派生；children 为偏移完全
-    落在本节点区间内的实体（交叉嵌套的实体互不包含，挂到最近的
-    公共外层下成为兄弟）。
+    由 JevNER 调用的返回值直接给出：__str__ 渲染为缩进树形，
+    print 即得可读嵌套结构，无需下游再做后处理。
 
     Attributes:
         entity: 本节点实体。
@@ -331,6 +330,52 @@ class EntityNode:
 
     entity: Entity
     children: tuple[EntityNode, ...] = ()
+
+    def __str__(self) -> str:
+        """渲染本节点为树根的可读缩进树。
+
+        Returns:
+            树形文本，如
+            "福建福州 (GPE 1.00) [16:20]\\n├── 福建 (GPE 1.00) [16:18]"。
+        """
+        return "\n".join(_render_node(self, ""))
+
+    __repr__ = __str__
+
+
+def _render_node(node: EntityNode, prefix: str) -> list[str]:
+    """渲染单节点与其子树的行列表（含框线前缀）。
+
+    自身标签行不加框线；子树的连接线由父级在拼接时统一加：
+    每层延续父前缀（最后一个子级用空格、其余用竖线）。
+
+    Args:
+        node: 当前渲染节点。
+        prefix: 本节点之前累积的框线前缀（自身行不加，子行使用）。
+
+    Returns:
+        逐行文本列表：首行为本节点纯标签，
+        子行为 prefix + 连接线 + 子节点首行，孙行递归拼接。
+    """
+    lines = [_label(node.entity)]
+    count = len(node.children)
+    for j, child in enumerate(node.children):
+        last = j == count - 1
+        child_prefix = prefix + ("    " if last else "│   ")
+        connector = "└── " if last else "├── "
+        sub = _render_node(child, child_prefix)
+        lines.append(prefix + connector + sub[0])
+        lines.extend(child_prefix + line for line in sub[1:])
+    return lines
+
+
+def _label(e: Entity) -> str:
+    """单个实体的单行标签：文本、类型（概率降序）、性别与偏移区间。"""
+    parts = [e.text, "(" + " · ".join(f"{t.value} {p:.2f}" for t, p in e.types) + ")"]
+    if isinstance(e, Person):
+        parts.append(f"[{e.gender.value} {e.gender_probability:.2f}]")
+    parts.append(f"[{e.start}:{e.end}]")
+    return " ".join(parts)
 
 
 def entity_tree(entities: list[Entity]) -> list[EntityNode]:
@@ -372,46 +417,3 @@ def entity_tree(entities: list[Entity]) -> list[EntityNode]:
         return EntityNode(entity=ordered[i], children=tuple(build(j) for j in children.get(i, [])))
 
     return [build(i) for i in range(len(ordered)) if parent[i] < 0]
-
-
-def format_entity_tree(roots: list[EntityNode]) -> str:
-    """把实体嵌套树渲染为可读的缩进文本。
-
-    每行一个实体：文本、全部类型（按概率降序）、可选性别、
-    原文偏移区间。子实体用框线缩进挂在外层实体之下，嵌套关联
-    一目了然，例如：
-
-    ```
-    福建福州 (GPE 0.99) [16:20]
-    ├── 福建 (GPE 1.00) [16:18]
-    └── 福州 (GPE 1.00) [18:20]
-    ```
-
-    Args:
-        roots: entity_tree() 返回的顶层节点列表。
-
-    Returns:
-        渲染文本；roots 为空时为空字符串。
-    """
-
-    def label(e: Entity) -> str:
-        types = " · ".join(f"{t.value} {p:.2f}" for t, p in e.types)
-        if isinstance(e, Person):
-            head = f"{e.text} ({types} | {e.gender.value} {e.gender_probability:.2f})"
-            return f"{head} [{e.start}:{e.end}]"
-        return f"{e.text} ({types}) [{e.start}:{e.end}]"
-
-    lines: list[str] = []
-
-    def walk(node: EntityNode, prefix: str) -> None:
-        count = len(node.children)
-        for j, child in enumerate(node.children):
-            last = j == count - 1
-            connector = "└── " if last else "├── "
-            lines.append(f"{prefix}{connector}{label(child.entity)}")
-            walk(child, prefix + ("    " if last else "│   "))
-
-    for root in roots:
-        lines.append(label(root.entity))
-        walk(root, "")
-    return "\n".join(lines)

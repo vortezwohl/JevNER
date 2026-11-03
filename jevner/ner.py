@@ -23,7 +23,7 @@ BertNER 的固定 n-gram 候选，以兼容全球语种：
 - Choice 的 probabilities 是跨选项归一化的竞争分布，NONE 的概率
   天然承担"非实体"置信度，prob_threshold 过滤基于被选中类型
   自身的概率；
-- 检测与分型问题分别按 MAX_QUESTIONS_PER_REQUEST 分批打包，
+- 检测与分型问题分别按各自批次大小打包，
   保证单个请求不超过 jev 的 per-request 上下文限制。
 """
 
@@ -42,10 +42,12 @@ from vortezwohl.iter import batched
 from jevner.entities import (
     NONE_LABEL,
     Entity,
+    EntityNode,
     EntityPack,
     EntityType,
     Gender,
     Person,
+    entity_tree,
     resolve_entity_types,
 )
 from jevner.prompt import render_detection_state, render_gender_state, render_typing_state
@@ -116,8 +118,14 @@ prob_threshold，其余类型达到该下限即作为次要类型一并返回，
 TYPING_BATCH_SIZE = 64
 """分型阶段单请求问题数。
 
-小于检测批（256）：分型需要精细语义判定，实测大批次会稀释 jev 对
-碎片 span 的 NONE 判定（批内问题互相干扰），小批次显著更稳。"""
+分型需要精细语义判定，实测大批次会稀释 jev 对碎片 span 的 NONE
+判定（批内问题互相干扰），小批次显著更稳。"""
+
+DETECT_BATCH_SIZE = 64
+"""检测阶段单请求问题数。
+
+与分型批对齐：检测同样受批内干扰影响，实测 256 大批下中文双字
+地名（"福建/福州"）的 Noul 值被稀释而漏检，64 批稳定。"""
 
 DETECT_PROB_THRESHOLD = 0.25
 """词元检测 Noul 的判定阈值。
@@ -154,8 +162,8 @@ MAX_ENTITY_TOKENS = 12
 超过此长度的命名实体极罕见；子 span 长度以此截断。
 """
 
-MAX_QUESTIONS_PER_REQUEST = 256
-"""单个 system_one 请求最多打包的问题数（受 jev per-request 上下文限制约束）。"""
+GENDER_BATCH_SIZE = 256
+"""性别判定单请求问题数（性别问题极小，大批次无批内干扰问题）。"""
 
 GENDER_CACHE_CAPACITY = 1024
 """性别判定结果的进程内 LRU 缓存容量。"""
@@ -273,7 +281,7 @@ class JevNER:
         scores: dict[int, float] = {}
         recheck: list[int] = []
         indexed: list[tuple[int, tuple[int, int, str]]] = list(enumerate(tokens))
-        for raw_batch in batched(indexed, MAX_QUESTIONS_PER_REQUEST):
+        for raw_batch in batched(indexed, DETECT_BATCH_SIZE):
             pairs = [p for p in raw_batch if p is not None]
             if not pairs:
                 continue
@@ -311,7 +319,7 @@ class JevNER:
             ]
             if not pending:
                 break
-            for raw_batch in batched(pending, MAX_QUESTIONS_PER_REQUEST):
+            for raw_batch in batched(pending, DETECT_BATCH_SIZE):
                 indices = [i for i in raw_batch if i is not None]
                 if not indices:
                     continue
@@ -622,7 +630,7 @@ class JevNER:
         if not pending:
             return results
         state = render_gender_state()
-        for raw_batch in batched(pending, MAX_QUESTIONS_PER_REQUEST):
+        for raw_batch in batched(pending, DETECT_BATCH_SIZE):
             batch = [n for n in raw_batch if n is not None]
             if not batch:
                 continue
@@ -659,8 +667,13 @@ class JevNER:
         window_size: int | None = None,
         stride: int | None = None,
         deduplicate: bool = True,
-    ) -> list[Entity | Person]:
-        """对文本执行命名实体识别。
+    ) -> list[EntityNode]:
+        """对文本执行命名实体识别，返回实体嵌套森林。
+
+        完整管线：原文偏移词元 → 滑动窗口 → 逐词元 Noul 检测
+        （灰色区多轮复检）→ 区间子 span Choice 分型（NONE 一票
+        否决 + 多类型收集）→ 同位置去重合并 → PERSON 升级 Person
+        → 偏移包含关系建树。
 
         Args:
             s: 待识别文本，任意语言。
@@ -676,8 +689,11 @@ class JevNER:
             deduplicate: 是否对跨窗口重复实体按 (text, type) 去重。
 
         Returns:
-            实体列表，按文本排序；PERSON 实体在 with_gender=True 时
-            为带性别字段的 Person。嵌套实体会同时给出内层与外层。
+            实体嵌套森林：顶层（不被任何实体包含）EntityNode 列表，
+            按 (start, end) 排序；每节点的 entity 为实体本体（PERSON
+            实体在 with_gender=True 时为带性别字段的 Person），
+            children 为偏移落在其区间内的内层实体。嵌套关系直接
+            内含于返回值，无需下游再做后处理。
 
         Raises:
             AssertionError: prob_threshold 不在 [0, 1] 内。
@@ -700,7 +716,7 @@ class JevNER:
         # 窗口按原文 token 偏移切分，窗口文本取原文字符区间（词元
         # 文本含空白前缀时会互相交叠，join 重建会产生重复字符），
         # 词元偏移全部锚定在原文上——span 与实体因此携带原文全局
-        # 偏移，嵌套关联由输出侧 entity_tree() 依据偏移包含关系派生
+        # 偏移，嵌套关联由偏移包含关系可靠判定
         if fast_mode:
             windows = [(s, self._tokenizer.window_tokens(s))]
         else:
@@ -725,27 +741,27 @@ class JevNER:
                     window_entities.append(cast("list[Entity]", result.returns))
         entities: list[Entity] = [e for ents in window_entities for e in ents]
         merged = self._combine(entities, deduplicate)
-        if not with_gender:
-            return merged
-        names = [e.text for e in merged if e.type is EntityType.PERSON]
-        genders = self._recognize_genders(names)
-        results: list[Entity | Person] = []
-        for e in merged:
-            if e.type is EntityType.PERSON and e.text in genders:
-                gender, gender_probability = genders[e.text]
-                results.append(
+        if with_gender:
+            # PERSON 实体升级为 Person（附带性别判定），再建树
+            names = [e.text for e in merged if e.type is EntityType.PERSON]
+            genders = self._recognize_genders(names)
+            merged = [
+                (
                     Person(
                         text=e.text,
                         types=e.types,
                         start=e.start,
                         end=e.end,
-                        gender=gender,
-                        gender_probability=gender_probability,
+                        gender=genders[e.text][0],
+                        gender_probability=genders[e.text][1],
                     )
+                    if e.type is EntityType.PERSON and e.text in genders
+                    else e
                 )
-            else:
-                results.append(e)
-        return results
+                for e in merged
+            ]
+        # 按偏移包含关系重建嵌套树：返回值自身即含关联结构
+        return entity_tree(merged)
 
     def close(self) -> None:
         """释放底层 HTTP 客户端。"""

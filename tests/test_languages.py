@@ -8,7 +8,7 @@ TYPESAFE_API_KEY / TYPESAFE_BASE_URL，产生真实 API 计费。
 
 from __future__ import annotations
 
-from jevner import JevNER, Person
+from jevner import JevNER
 
 # (语种, 大洲, 测试文本, 必须命中的实体文本子串)
 LANGUAGE_CASES: list[tuple[str, str, str, str]] = [
@@ -42,26 +42,29 @@ LANGUAGE_CASES: list[tuple[str, str, str, str]] = [
 ]
 
 
+def flatten(nodes: list) -> list:
+    """递归收集森林全部节点（含内层实体）。"""
+    out: list = []
+    for n in nodes:
+        out.append(n)
+        out.extend(flatten(list(n.children)))
+    return out
+
+
 def main() -> None:
     ner = JevNER()
     failures: list[str] = []
     print("=" * 70)
     for lang, continent, text, expected in LANGUAGE_CASES:
-        entities = ner(text)
-        hit_texts = {e.text for e in entities}
+        forest = ner(text)
+        all_nodes = flatten(forest)
+        hit_texts = {n.entity.text for n in all_nodes}
         hit = any(expected in t or t in expected for t in hit_texts)
         status = "PASS" if hit else "FAIL"
         if not hit:
             failures.append(lang)
         print(f"[{status}] {lang} ({continent}) 期望: {expected}")
-        for e in entities:
-            if isinstance(e, Person):
-                print(
-                    f"         {e.text} | {','.join(t.value for t, _ in e.types)}"
-                    f" | {e.gender.value}"
-                )
-            else:
-                print(f"         {e.text} | {','.join(t.value for t, _ in e.types)}")
+        print("  " + "\n  ".join(str(n) for n in forest).replace("\n", "\n  "))
     ner.close()
     print("=" * 70)
     print(f"通过 {len(LANGUAGE_CASES) - len(failures)}/{len(LANGUAGE_CASES)} 个语种")

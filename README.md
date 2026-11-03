@@ -10,7 +10,7 @@
 - **无本地模型**：不加载任何神经网络权重，唯一推理依赖是 TypeSafe API（`jev-latest`）；
 - **随包分词器**：Qwen3 字节级 BPE 分词器（覆盖 100+ 语言含 CJK）打包在包内 `assets/`，无需访问 HuggingFace，无需 transformers/torch；
 - **实体包体系**：基础包 CORE（OntoNotes 十八类 + MISC）默认启用，垂直领域包 BIOMED（疾病/药物/基因/蛋白质/化学）、FINANCE（证券/指数/货币）、TECH（软件/协议/平台）按需叠加；
-- **嵌套实体树**：每个实体携带原文全局偏移（`start`/`end`，`text == source[start:end]` 恒成立），`entity_tree()` 依据偏移包含关系派生嵌套树（交叉嵌套挂最近公共外层），`format_entity_tree()` 渲染可读树形；
+- **嵌套实体树**：返回值即 `list[EntityNode]` 森林，偏移包含关系派生（交叉嵌套挂最近公共外层成兄弟），`print(node)` 直接得到可读树形，无需下游后处理；
 - **性别识别**：PERSON 实体自动附加性别判定（MALE/FEMALE/UNKNOWN），进程内 LRU 缓存；
 - **typesafe**：全量类型标注（`py.typed`），mypy 零错误，提示词按结构化提示词设计方法论（七层语义模型）经 prompt4py 渲染，ruff 全量格式化。
 
@@ -23,26 +23,27 @@ uv add jevner        # 或 pip install jevner
 ## 快速开始
 
 ```python
-from jevner import JevNER, entity_tree, format_entity_tree
+from jevner import JevNER
 
 ner = JevNER()  # 凭据读取环境变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL
 
-entities = ner("你好, 我的名字是吴子豪, 来自福建福州.")
-# [Person(text='吴子豪', types=((PERSON, 1.0),), start=9, end=12, gender=MALE, ...),
-#  Entity(text='福建福州', types=((GPE, 1.0),), start=16, end=20), ...]
-
-# 嵌套关联：偏移包含关系派生树，可读渲染
-print(format_entity_tree(entity_tree(entities)))
+# 返回值即实体嵌套森林，print 直接得到可读树形
+forest = ner("你好, 我的名字是吴子豪, 来自福建福州.")
+for node in forest:
+    print(node)
 # 吴子豪 (PERSON 1.00 | MALE 1.00) [9:12]
 # 福建福州 (GPE 1.00) [16:20]
 # ├── 福建 (GPE 1.00) [16:18]
 # └── 福州 (GPE 1.00) [18:20]
 
-ner("患者确诊为二型糖尿病, 服用二甲双胍...", entity_packs=["BIOMED"])
-# [Entity(text='二型糖尿病', types=((DISEASE, 1.0),), start=5, end=10), ...]
+# 垂直领域：生物医学实体包
+forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=["BIOMED"])
+# 二型糖尿病 (DISEASE 1.00) [5:10]
+# ├── 糖尿病 (DISEASE 0.99) [7:10]
+# 二甲双胍 (DRUG 1.00) [14:18]
 ```
 
-`Entity.types` 是 `(EntityType, probability)` 元组序列（概率降序，至少一项）；`Entity.type` / `Entity.base_probability` 属性取首项，兼容单类型访问习惯。`Entity.start` / `end` 是原文全局字符偏移（恒满足 `text == source[start:end]`），嵌套关联用 `entity_tree(entities)` 派生（交叉嵌套挂到最近公共外层），`format_entity_tree()` 渲染为可读树形。
+返回值是 `list[EntityNode]`：顶层（不被包含的实体）节点按 `(start, end)` 排序，`node.entity` 为实体本体，`node.children` 递归内层实体。`Entity.types` 是 `(EntityType, probability)` 元组序列（概率降序，一实体可多类型）；`Entity.type` / `base_probability` 取首项；`start` / `end` 是原文全局字符偏移（恒满足 `text == source[start:end]`），嵌套即由偏移包含关系派生。
 
 ## API
 
@@ -52,7 +53,7 @@ JevNER(model_name="jev-latest", *, api_key=None, base_url=None, timeout=None,
 
 ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
     prob_threshold=0.5, fast_mode=False, window_size=None, stride=None,
-    deduplicate=True) -> list[Entity | Person]
+    deduplicate=True) -> list[EntityNode]
 ```
 
 | 参数 | 说明 |

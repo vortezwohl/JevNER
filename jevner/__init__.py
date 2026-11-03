@@ -5,53 +5,28 @@
 的长文本滑动窗口算法，随包分发 Qwen3 分词器。
 
 实体类型体系：基础实体包 CORE（OntoNotes 5.0 十八类 + MISC 兜底）
-默认启用，另提供生物医学（BIOMED）、金融（FINANCE）、软件科技
-（TECH）垂直领域实体包按需叠加，调用方通过 entity_packs 选择。
+默认启用，垂直领域包 BIOMED（生物医学）、FINANCE（金融）、TECH
+（软件科技）按需叠加。
 
-调用方与维护者进入本包时最需要先知道：
-- 核心入口是 JevNER 实例，调用方式与 BertNER 对齐：
-  ner = JevNER(); ner('你好, 我的名字是吴子豪, 来自福建福州.');
-- 凭据从环境变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL 读取；
-- 除 TypeSafe API 外没有任何模型下载或本地推理。
+调用方最常用的入口：
+- JevNER：识别器实例，调用即返回实体嵌套森林（list[EntityNode]，
+  print 直接得到可读树形）；
+- EntityType / Gender：类型与性别枚举；
+- Entity / Person / EntityNode：结果数据类；
+- BIOMED / CORE / FINANCE / TECH：可选实体包。
+
+凭据从环境变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL 读取；
+除 TypeSafe API 外没有任何模型下载或本地推理。
 """
 
-from jevner.entities import (
-    BIOMED,
-    CORE,
-    DEFAULT_PACKS,
-    ENTITY_PACKS,
-    FINANCE,
-    TECH,
-    Entity,
-    EntityNode,
-    EntityPack,
-    EntityType,
-    Gender,
-    Person,
-    entity_tree,
-    format_entity_tree,
-)
-from jevner.ner import (
-    DEFAULT_MODEL,
-    DEFAULT_PROB_THRESHOLD,
-    DEFAULT_STRIDE_DIVISOR,
-    DEFAULT_WINDOW_SIZE,
-    JevNER,
-)
-from jevner.tokenizer import BundledTokenizer
+from jevner.entities import BIOMED, CORE, Entity, EntityNode, EntityPack, EntityType, Gender, Person
+from jevner.ner import JevNER
 
 __version__ = "0.1.0"
 
 __all__ = [
     "BIOMED",
-    "BundledTokenizer",
     "CORE",
-    "DEFAULT_MODEL",
-    "DEFAULT_PACKS",
-    "DEFAULT_PROB_THRESHOLD",
-    "DEFAULT_STRIDE_DIVISOR",
-    "DEFAULT_WINDOW_SIZE",
-    "ENTITY_PACKS",
     "Entity",
     "EntityNode",
     "EntityPack",
@@ -61,6 +36,4 @@ __all__ = [
     "JevNER",
     "Person",
     "TECH",
-    "entity_tree",
-    "format_entity_tree",
 ]

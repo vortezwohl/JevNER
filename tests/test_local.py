@@ -20,15 +20,9 @@ from jevner.entities import (
     Gender,
     Person,
     entity_tree,
-    format_entity_tree,
     resolve_entity_types,
 )
-from jevner.ner import (
-    DEFAULT_WINDOW_SIZE,
-    QUESTION_CONTEXT_LIMIT,
-    QUESTION_HEADROOM,
-    JevNER,
-)
+from jevner.ner import DEFAULT_WINDOW_SIZE, QUESTION_CONTEXT_LIMIT, QUESTION_HEADROOM, JevNER
 from jevner.tokenizer import BundledTokenizer, strip_edge_punctuation, strip_span
 
 # 中文（无空格）+ 泰文（无空格复杂 cluster）+ 阿拉伯文（RTL）
@@ -160,7 +154,8 @@ child_texts = [c.entity.text for c in outer.children]
 assert set(child_texts) == {"中华人民共和国", "耿爽"}, f"嵌套/交叉应挂公共外层: {child_texts}"
 gpe_child = next(c for c in outer.children if c.entity.text == "中华人民共和国")
 assert gpe_child.children == (), "内层 GPE 下应无更深层"
-rendered = format_entity_tree(roots)
+# __str__ 渲染：print(node) 即得可读树形
+rendered = str(outer)
 assert "├──" in rendered and "└──" in rendered, f"渲染应含树形框线: {rendered}"
 print("[10] 实体嵌套树 + 交叉嵌套 + 渲染: OK")
 print(rendered)
@@ -172,8 +167,7 @@ person = Person(
     gender=Gender.MALE,
     gender_probability=0.8,
 )
-roots2 = entity_tree([person])
-assert "MALE" in format_entity_tree(roots2), "渲染应含性别"
+assert "MALE" in str(entity_tree([person])), "渲染应含性别"
 print("[11] Person 树渲染（含性别）: OK")
 
 print()
