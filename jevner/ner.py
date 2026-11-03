@@ -119,8 +119,13 @@ TYPING_BATCH_SIZE = 64
 小于检测批（256）：分型需要精细语义判定，实测大批次会稀释 jev 对
 碎片 span 的 NONE 判定（批内问题互相干扰），小批次显著更稳。"""
 
-DETECT_PROB_THRESHOLD = 0.5
-"""词元检测 Noul 的判定阈值。"""
+DETECT_PROB_THRESHOLD = 0.25
+"""词元检测 Noul 的判定阈值。
+
+检测阶段宁滥勿缺：碎片/伪 span 由分型阶段的 NONE 一票否决
+（含 prob_threshold 主阈值）在源头过滤，检测层放宽只增加候选
+span 数量、不引入伪实体。实测中文高频单字（"二甲双胍"的"二"
+等数字词）单轮检测分数可低至 0.3，阈值过高会整词漏检。"""
 
 DETECT_GAP_TOLERANCE = 2
 """区间重组允许的漏检词元数。
@@ -131,12 +136,17 @@ DETECT_GAP_TOLERANCE = 2
 兜底过滤。
 """
 
-DETECT_RECHECK_LOW = 0.3
+DETECT_RECHECK_LOW = 0.15
 """词元检测复检的灰色区下界。
 
-Noul 值落在 [0.3, 0.5) 的词元做第二轮复检（两轮取最大值），
-降低采样方差导致的词元级漏检。
+Noul 值落在 [DETECT_RECHECK_LOW, 0.5) 的词元进入复检队列，
+做三轮独立复检取最大值——真实 API 逐请求存在采样方差，实测
+中文医药词元（如"二甲双胍"的"二/甲/双/胍"）单轮检测概率可低至
+0.2~0.4，单轮 + 低阈值会整词漏检，三轮取最大显著压低漏检率。
 """
+
+DETECT_RECHECK_ROUNDS = 3
+"""灰色区词元复检轮数（含首轮共 1 + 3 轮采样，取最大值）。"""
 
 MAX_ENTITY_TOKENS = 12
 """实体区间内子 span 的最大词元长度。
@@ -292,30 +302,38 @@ class JevNER:
                 scores[i] = float(answer.noul)
                 if DETECT_RECHECK_LOW <= scores[i] < DETECT_PROB_THRESHOLD:
                     recheck.append(i)
-        # 第二轮复检灰色区词元
-        for raw_batch in batched(recheck, MAX_QUESTIONS_PER_REQUEST):
-            indices = [i for i in raw_batch if i is not None]
-            if not indices:
-                continue
-            questions = {
-                f"tok_{i}": Noul(
-                    instructions={
-                        "TOKEN": tokens[i][2].strip(),
-                        "POSITION": i,
-                        "LEFT": tokens[i - 1][2].strip() if i > 0 else "",
-                        "RIGHT": tokens[i + 1][2].strip() if i + 1 < len(tokens) else "",
-                    }
-                )
-                for i in indices
-            }
-            response = self._client.system_one(
-                state=state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
-            )
-            for i in indices:
-                answer = response.nouls.get(f"tok_{i}")
-                if answer is None:
+        # 灰色区词元多轮复检（DETect_RECHECK_ROUNDS 轮独立采样取最大值）
+        for _ in range(DETECT_RECHECK_ROUNDS):
+            pending = [
+                i
+                for i, score in scores.items()
+                if DETECT_RECHECK_LOW <= score < DETECT_PROB_THRESHOLD
+            ]
+            if not pending:
+                break
+            for raw_batch in batched(pending, MAX_QUESTIONS_PER_REQUEST):
+                indices = [i for i in raw_batch if i is not None]
+                if not indices:
                     continue
-                scores[i] = max(scores[i], float(answer.noul))
+                questions = {
+                    f"tok_{i}": Noul(
+                        instructions={
+                            "TOKEN": tokens[i][2].strip(),
+                            "POSITION": i,
+                            "LEFT": tokens[i - 1][2].strip() if i > 0 else "",
+                            "RIGHT": tokens[i + 1][2].strip() if i + 1 < len(tokens) else "",
+                        }
+                    )
+                    for i in indices
+                }
+                response = self._client.system_one(
+                    state=state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
+                )
+                for i in indices:
+                    answer = response.nouls.get(f"tok_{i}")
+                    if answer is None:
+                        continue
+                    scores[i] = max(scores[i], float(answer.noul))
         hits = sorted(i for i, score in scores.items() if score >= DETECT_PROB_THRESHOLD)
         # 命中词元按位置严格连续性重组为区间（双策略之一）。
         # 严格连续保证相邻实体不互相粘连："在北京"与"耿爽"各自
@@ -473,22 +491,28 @@ class JevNER:
                     logger.warning("JevNER got no typing answer for type_%d, skipped.", i)
                     batch[i] = ()
                     continue
-                # 多类型收集：主类型（被选项）过 prob_threshold，
+                # NONE 一票否决：jev 判定该 span 不是实体时，
+                # 不再收集任何次要类型——否则碎片 span 会借
+                # 低概率次要类型绕过否决混入结果（实测 0.25~0.5
+                # 的碎片噪声即从该路径漏入）
+                if answer.choice == NONE_LABEL:
+                    batch[i] = ()
+                    continue
+                # 主类型（被选项）必须过 prob_threshold；
                 # 其余类型过 SECONDARY_TYPE_THRESHOLD 即为次要类型
                 best_per_type: dict[EntityType, float] = {}
-                if answer.choice != NONE_LABEL:
-                    primary_prob = float(answer.probabilities.get(answer.choice, 0.0))
-                    if primary_prob >= prob_threshold:
-                        try:
-                            best_per_type[EntityType(answer.choice)] = primary_prob
-                        except ValueError:
-                            logger.warning(
-                                "JevNER got unexpected entity label %r, dropped.", answer.choice
-                            )
+                primary_prob = float(answer.probabilities.get(answer.choice, 0.0))
+                if primary_prob < prob_threshold:
+                    batch[i] = ()
+                    continue
+                try:
+                    best_per_type[EntityType(answer.choice)] = primary_prob
+                except ValueError:
+                    logger.warning("JevNER got unexpected entity label %r, dropped.", answer.choice)
+                    batch[i] = ()
+                    continue
                 for label, prob in answer.probabilities.items():
-                    if label == NONE_LABEL or label == answer.choice:
-                        continue
-                    if prob < SECONDARY_TYPE_THRESHOLD:
+                    if label == answer.choice or prob < SECONDARY_TYPE_THRESHOLD:
                         continue
                     try:
                         etype = EntityType(label)
@@ -543,15 +567,13 @@ class JevNER:
 
         - 同一出现位置（start/end 相同）：跨窗口/跨批次重复识别的同
           一实体，合并为一个，多类型取并集，同类型取最高概率；
-        - 不同位置但区间交叠且主类型相同：检测方差的碎片（如只命中
-          "吴"而漏"子豪"时产出的 PERSON"吴"），由概率最高者吸收
-          ——真实嵌套实体（GPE"福建"内嵌 GPE"福建福州"）主类型
-          相同时同样交叠，但完整实体概率恒高于碎片，保留的仍是
-          完整实体；主类型不同的交叠是嵌套实体，两侧都保留；
-        - 互不交叠：各自独立保留。
+        - 不同出现位置：各自独立保留——含包含关系的实体是嵌套实体
+          （如 GPE"福建"[16:18] 内嵌于 GPE"福建福州"[16:20]），合并
+          阶段不做任何吸收或吞并，嵌套关联完全交由输出侧
+          entity_tree() 依据偏移包含关系派生。
 
-        关联（包含/交叠关系）不在合并时丢失也不在合并时判定：
-        输出侧 entity_tree() 依据偏移包含关系派生树结构。
+        碎片噪声（检测方差产生的 PERSON"吴"之类）不在合并阶段拦截——
+        由分型阶段的 NONE 一票否决在源头过滤。
 
         Args:
             entities: 全部窗口的实体平铺列表。
@@ -563,11 +585,12 @@ class JevNER:
         """
         if not deduplicate:
             return sorted(entities, key=lambda e: (e.start, e.end, e.text))
-        # 第一步：按出现位置分组，同位置合并类型并集
+        # 按出现位置分组：同位置的跨窗口/跨批次判定合并为一个实体，
+        # 类型并集、同类型取最高概率；不同位置一律独立保留
         by_span: dict[tuple[int, int], list[Entity]] = {}
         for e in entities:
             by_span.setdefault((e.start, e.end), []).append(e)
-        unified: list[Entity] = []
+        merged: list[Entity] = []
         for (start, end), group in sorted(by_span.items()):
             best_per_type: dict[EntityType, float] = {}
             text = group[0].text
@@ -576,18 +599,8 @@ class JevNER:
                     if etype not in best_per_type or prob > best_per_type[etype]:
                         best_per_type[etype] = prob
             ranked = tuple(sorted(best_per_type.items(), key=lambda kv: -kv[1]))
-            unified.append(Entity(text=text, types=ranked, start=start, end=end))
-        # 第二步：同主类型区间交叠的碎片吸收——概率降序遍历，
-        # 已保留实体先占据输出位，后续同主类型交叠者视为碎片吸收
-        unified.sort(key=lambda e: (-e.base_probability, -len(e.text), e.start))
-        survivors: list[Entity] = []
-        for e in unified:
-            absorbed = any(
-                e.type is s.type and e.start < s.end and s.start < e.end for s in survivors
-            )
-            if not absorbed:
-                survivors.append(e)
-        return sorted(survivors, key=lambda e: (e.start, e.end))
+            merged.append(Entity(text=text, types=ranked, start=start, end=end))
+        return merged
 
     def _recognize_genders(self, names: list[str]) -> dict[str, tuple[Gender, float]]:
         """批量判定人名性别（带进程内缓存）。

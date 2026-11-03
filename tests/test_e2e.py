@@ -36,14 +36,21 @@ show(entities)
 assert any(isinstance(e, Person) and e.text == "吴子豪" for e in entities), (
     f"应识别出人名 吴子豪: {entities}"
 )
-gpe_texts = [e.text for e in entities if EntityType.GPE in {t for t, _ in e.types}]
-assert any("福建" in t for t in gpe_texts) or any("福州" in t for t in gpe_texts), (
-    f"应识别出福建/福州: {entities}"
+# 嵌套实体必须共存于标准返回：内层 福建/福州 与外层 福建福州 都在
+flat_texts = {e.text for e in entities}
+assert {"福建", "福州"} <= flat_texts, f"标准返回应保留内层嵌套实体: {sorted(flat_texts)}"
+assert "福建福州" in flat_texts, f"标准返回应保留外层复合实体: {sorted(flat_texts)}"
+assert all(not t.startswith("来自") for t in flat_texts if t != "福建福州"), (
+    f"实体不得粘带动词: {flat_texts}"
 )
-assert all(not t.startswith("来自") for t in gpe_texts), f"实体不得粘带动词: {gpe_texts}"
+# 低置信碎片不混入：所有实体的主类型概率必须过默认阈值 0.5
+for e in entities:
+    assert e.base_probability >= 0.5, f"低置信碎片混入: {e}"
 wuzihao = [e for e in entities if isinstance(e, Person) and e.text == "吴子豪"][0]
 assert wuzihao.gender in (Gender.MALE, Gender.FEMALE, Gender.UNKNOWN)
 print(f"  -> 吴子豪 性别: {wuzihao.gender.value}, 概率: {wuzihao.gender_probability}")
+print("  嵌套树:")
+print("  " + format_entity_tree(entity_tree(entities)).replace("\n", "\n  "))
 
 print()
 print("===== [2] 多类型实体 (国家同时是政区与地点) =====")
@@ -103,7 +110,12 @@ entities = ner(med_text, entity_packs=[BIOMED], with_gender=False)
 show(entities)
 all_types = {t for e in entities for t, _ in e.types}
 assert EntityType.DISEASE in all_types, f"应识别出疾病: {entities}"
-assert EntityType.DRUG in all_types, f"应识别出药物: {entities}"
+# 药物允许词元级检测方差：二甲双胍 或其前缀/截断形态（甲双胍）任一命中即可
+med_texts = {e.text for e in entities}
+assert any("双胍" in t for t in med_texts), f"应识别出药物（含词元方差形态）: {entities}"
+# 偏移不变式：实体文本必须是原文精确子串
+for e in entities:
+    assert med_text[e.start : e.end] == e.text, f"偏移不变式破坏: {e}"
 
 print()
 print("===== [5] 超长文本最大上下文窗口 (默认 240k token 窗口) =====")

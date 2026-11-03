@@ -135,10 +135,10 @@ org_types = {t for t, _ in org.types}
 assert EntityType.ORG in org_types and EntityType.GPE in org_types, f"同位置应合并类型并集: {org}"
 org_probs = dict(org.types)
 assert org_probs[EntityType.ORG] == 0.95, f"同类型应取最高概率: {org}"
-# 嵌套内层与独立实体各自保留（不再互相吸收）
+# 交叠/包含不做任何吸收：嵌套内层与独立实体一律保留（关联交由 entity_tree 派生）
 assert (0, 7) in by_span, f"嵌套内层 GPE 应保留: {merged}"
-assert (16, 18) in by_span and (18, 20) in by_span
-print(f"[9] 跨窗口合并（按位置）: {[(e.text, e.start, e.end) for e in merged]}")
+assert (16, 18) in by_span and (18, 20) in by_span, f"独立实体应保留: {merged}"
+print(f"[9] 跨窗口合并（按位置，不吸收交叠）: {[(e.text, e.start, e.end) for e in merged]}")
 
 # 实体嵌套树：偏移包含关系派生 + 交叉嵌套挂公共外层
 nested = [
