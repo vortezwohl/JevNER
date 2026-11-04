@@ -44,11 +44,27 @@ JevNER takes a third path. A **System One judgment model** — not a text genera
 | One span gets one type, even when a name is both a place and an organization. | **Multi-type entities, ranked.** `Entity.types` carries every competitive type with its probability, ordered by relevance. |
 | Every deployment downloads model weights. | **No local models at all.** A bundled Qwen3 tokenizer (100+ languages) ships inside the package; all inference goes through the EasyJev gateway. |
 
-## Quick Start
+## Installation
 
-```bash
-uv add -U jevner        # or: pip install -U jevner
-```
+- From [PyPI](https://pypi.org/project/jevner/)
+
+    ```shell
+    pip install -U jevner
+    ```
+
+- Recommended, with [uv](https://docs.astral.sh/uv/)
+
+    ```shell
+    uv add -U jevner
+    ```
+
+- From [GitHub](https://github.com/vortezwohl/JevNER) — get access to unreleased features.
+
+    ```shell
+    pip install git+https://github.com/vortezwohl/JevNER.git
+    ```
+
+## Quick Start
 
 ```python
 from jevner import JevNER
