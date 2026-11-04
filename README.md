@@ -15,10 +15,6 @@
   <br/>
   <strong>Sponsored by <a href="https://www.easyjev.online/">EasyJev</a> — every decision model, one endpoint.</strong>
 </p>
-  </a>
-  <br/>
-  <strong>Sponsored by <a href="https://www.easyjev.online/">EasyJev</a> — every decision model, one endpoint.</strong>
-</p>
 
 [![PyPI](https://img.shields.io/pypi/v/jevner.svg?style=flat-square&color=8CE838&label=PyPI&cacheSeconds=1)](https://pypi.org/project/jevner/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-2563EB?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/jevner/)
