@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "jevner"
 version = "0.1.0"
@@ -17,6 +21,12 @@ dev = [
     "mypy>=2.4.1",
     "pytest>=9.2.0",
 ]
+
+[tool.setuptools]
+packages = ["jevner"]
+
+[tool.setuptools.package-data]
+jevner = ["assets/*", "py.typed"]
 
 [tool.mypy]
 python_version = "3.11"
