@@ -1,7 +1,7 @@
 [project]
 name = "jevner"
 version = "0.1.0"
-description = "无本地模型的多语言命名实体识别 SDK：jev-latest 超级 BERT + 最大上下文窗口 + 多类型实体 + 随包 Qwen3 分词器，实测覆盖亚欧美 24 语种"
+description = "Zero-shot multilingual NER SDK on System One decision models: nested entity trees, customizable entity packs, 24-language coverage, bundled tokenizer, no local models"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

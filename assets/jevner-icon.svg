@@ -1,45 +1,61 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
   <title id="title">JevNER icon</title>
-  <desc id="desc">A TRON-style detection reticle locking onto three entity spans, one glowing brighter than the rest.</desc>
+  <desc id="desc">A Rick-and-Morty-style gooey tag: an irregular blob shape with a bold black outline, acid-green fill, and three little bracket-marked entity chips being slurped up by a wobbly hand-drawn reticle.</desc>
   <defs>
-    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="5" result="b1"/>
-      <feGaussianBlur stdDeviation="11" result="b2"/>
-      <feMerge>
-        <feMergeNode in="b2"/>
-        <feMergeNode in="b1"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
-    <linearGradient id="dim" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#0E7490"/>
-      <stop offset="1" stop-color="#164E63"/>
+    <linearGradient id="goo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#B8FF58"/>
+      <stop offset="0.55" stop-color="#8CE838"/>
+      <stop offset="1" stop-color="#5FC72E"/>
+    </linearGradient>
+    <linearGradient id="goo2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7EE3FF"/>
+      <stop offset="1" stop-color="#35B5E0"/>
     </linearGradient>
   </defs>
 
-  <rect width="256" height="256" fill="#050A14"/>
+  <!-- wobbly irregular blob background (transparent outside the blob) -->
+  <path d="M116 22
+           C 152 18 176 34 196 52
+           C 220 74 238 96 232 128
+           C 227 155 236 168 222 190
+           C 208 212 184 210 160 224
+           C 134 239 108 232 84 220
+           C 58 207 34 194 28 162
+           C 22 132 16 106 34 82
+           C 52 58 70 42 88 30
+           C 96 24 106 23 116 22 Z"
+        fill="url(#goo)" stroke="#10140A" stroke-width="10" stroke-linejoin="round"/>
 
-  <!-- faint grid -->
-  <g stroke="#0E2233" stroke-width="1">
-    <path d="M0 64H256M0 128H256M0 192H256"/>
-    <path d="M64 0V256M128 0V256M192 0V256"/>
+  <!-- inner goo highlight -->
+  <path d="M74 66 C 96 48 128 42 158 52 C 176 58 188 68 192 82
+           C 166 70 128 64 96 74 C 84 78 76 82 74 66 Z"
+        fill="#D6FFA0" opacity="0.75"/>
+
+  <!-- three entity chips drawn as little wobbly tags -->
+  <g stroke="#10140A" stroke-width="7" stroke-linejoin="round">
+    <!-- dim chip 1 (top-left) -->
+    <path d="M60 96 l 26 -8 l 14 22 l -22 12 Z" fill="#2E7C1E"/>
+    <!-- dim chip 2 (top-right) -->
+    <path d="M168 88 l 26 2 l 6 26 l -24 6 l -10 -20 Z" fill="#2E7C1E"/>
+    <!-- bright chip: the locked entity -->
+    <path d="M92 138 l 40 -10 l 22 30 l -34 26 l -30 -18 Z" fill="url(#goo2)"/>
   </g>
 
-  <!-- detection reticle (NER brackets) -->
-  <g fill="none" stroke="#00E5FF" stroke-width="7" stroke-linecap="square" filter="url(#glow)">
-    <path d="M20 60V20H60"/>
-    <path d="M196 20H236V60"/>
-    <path d="M236 196V236H196"/>
-    <path d="M60 236H20V196"/>
+  <!-- detection brackets around the bright chip, hand-drawn wobble -->
+  <g fill="none" stroke="#10140A" stroke-width="9" stroke-linecap="round">
+    <path d="M72 128 C 68 112 74 104 86 100"/>
+    <path d="M186 108 C 196 118 196 130 190 142"/>
+    <path d="M104 204 C 118 210 134 208 146 200"/>
   </g>
 
-  <!-- entity spans: two dim, the locked one glows -->
-  <g stroke-linecap="square">
-    <rect x="44" y="96" width="64" height="20" fill="none" stroke="url(#dim)" stroke-width="6"/>
-    <rect x="148" y="96" width="64" height="20" fill="none" stroke="url(#dim)" stroke-width="6"/>
-    <rect x="92" y="146" width="72" height="22" fill="#00E5FF" stroke="#7FF6FF" stroke-width="3" filter="url(#glow)"/>
-  </g>
+  <!-- scan zap across the locked chip -->
+  <path d="M98 150 C 116 144 136 146 150 152" fill="none" stroke="#10140A" stroke-width="6" stroke-linecap="round" stroke-dasharray="2 12"/>
 
-  <!-- scan line sweeping through the locked span -->
-  <path d="M92 157H164" stroke="#B6FF00" stroke-width="4" stroke-linecap="square" filter="url(#glow)"/>
+  <!-- droplet flying off the blob -->
+  <path d="M226 66 c 6 10 8 16 2 22 c -6 6 -14 4 -16 -4 c -2 -8 6 -12 14 -18 Z"
+        fill="url(#goo)" stroke="#10140A" stroke-width="6" stroke-linejoin="round"/>
+
+  <!-- two sparkle stars -->
+  <path d="M42 52 l 4 10 l 10 4 l -10 4 l -4 10 l -4 -10 l -10 -4 l 10 -4 Z" fill="#10140A"/>
+  <path d="M206 218 l 3 8 l 8 3 l -8 3 l -3 8 l -3 -8 l -8 -3 l 8 -3 Z" fill="#10140A"/>
 </svg>

@@ -1,31 +1,21 @@
 <div align="center">
 
 <h1>
-  <img src="assets/jevner-wordmark.svg" alt="JevNER" width="520" />
+  <img src="assets/jevner-wordmark.svg" alt="JevNER" width="500" />
 </h1>
 
-**No local models. Calibrated probabilities. Nested entities.**
+**Zero-shot multilingual NER. Powered by System One judgment models.**
 
-*A typesafe Python SDK for multilingual named entity recognition over System One gateway models, with a bundled Qwen3 tokenizer.*
+*A typesafe Python SDK that turns a judgment model into a named entity recognizer — nested entity trees, custom entity packs, and a bundled Qwen3 tokenizer, with no local models to train or deploy.*
 
-[![PyPI](https://img.shields.io/pypi/v/jevner?style=flat-square&color=00CFFF&label=PyPI)](https://pypi.org/project/jevner/)
+[![PyPI](https://img.shields.io/pypi/v/jevner?style=flat-square&color=8CE838&label=PyPI)](https://pypi.org/project/jevner/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-2563EB?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
-[![License](https://img.shields.io/badge/License-MIT-B6FF00?style=flat-square&labelColor=07121F)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-6366F1?style=flat-square&labelColor=10140A)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/vortezwohl/JevNER?style=flat-square&label=Stars)](https://github.com/vortezwohl/JevNER/stargazers)
 
-<a href="https://docs.typesafe.ai">
-  <img src="https://img.shields.io/badge/TypeSafe-System%20One-00E5FF?style=flat-square&logo=github&logoColor=white" alt="TypeSafe System One" />
-</a>
-<a href="https://github.com/vortezwohl/DeepLoTX">
-  <img src="https://img.shields.io/badge/DeepLoTX-BertNER-7C3AED?style=flat-square&logo=github&logoColor=white" alt="DeepLoTX BertNER" />
-</a>
-<a href="https://huggingface.co/Qwen/Qwen3-8B">
-  <img src="https://img.shields.io/badge/Qwen3-Tokenizer-B6FF00?style=flat-square&logo=huggingface&logoColor=white" alt="Qwen3 tokenizer" />
-</a>
+**No training. Any language. The tree comes back in the return value.**
 
-**One call. A nested entity forest. Every probability calibrated.**
-
-[Why](#why-jevner) &middot; [Quick start](#quick-start) &middot; [Capabilities](#core-capabilities) &middot; [Patterns](#common-patterns) &middot; [API](#public-api) &middot; [Boundaries](#design-boundaries)
+[Why](#why-jevner) &middot; [Quick start](#quick-start) &middot; [Capabilities](#core-capabilities) &middot; [Patterns](#common-patterns) &middot; [API](#public-api) &middot; [Boundaries](#design-boundaries) &middot; [Sponsor](#sponsor)
 
 </div>
 
@@ -33,18 +23,18 @@
 
 ## Why JevNER
 
-Most NER stacks make you choose: a fast local model frozen to one label set, or a hosted API with fixed entity types and no confidence you can act on.
+Most NER stacks make you choose: a local model frozen to one label set, or a hosted API that hides how confident it really is.
 
-JevNER takes a third path. A System One gateway model acts as the tagger: every question returns typed answers with calibrated probabilities instead of generated text, and the SDK assembles them into a nested entity forest you can print as a tree.
+JevNER takes a third path. A **System One judgment model** — not a text generator — reads every question and returns **calibrated probabilities** instead of prose, and the SDK assembles those judgments into a **nested entity forest** you can print as a tree.
 
-| Where classic NER falls short | What JevNER makes explicit |
+| Where classic NER falls short | What JevNER does instead |
 | --- | --- |
-| Label sets are frozen at fine-tuning time; new domains need new training runs. | Entity types and packs are open data: a JSON document defines new types, new packs, and defaults at runtime. |
-| Hosted NER APIs return flat spans; nested entities are flattened or dropped. | The return value is a forest: `node.children` holds every entity contained in `node`, derived from offset containment. |
-| A softmax score is not a probability you can route on. | Choice probabilities are calibrated: `0.8` behaves like "right 80% of the time", enabling confidence-gated review flows. |
-| One span, one type — even when a name is both a place and an organization. | `Entity.types` carries every competitive type with its probability, ranked by relevance. |
-| Multilingual coverage means one fine-tuned model per language. | The same pipeline scored 24 languages across Asia, Europe, and the Americas with zero training. |
-| Every deployment pulls model weights from a hub. | No local model exists. A bundled Qwen3 tokenizer handles windowing; all inference goes through the System One gateway. |
+| Label sets are frozen at fine-tuning time; every new domain means a new training run. | **Zero-shot by design.** Entity types are open data: any user (including non-programmers) can add types and packs at runtime through a plain JSON document. |
+| Multilingual coverage means one fine-tuned checkpoint per language. | **One pipeline, 24 languages verified** — Chinese, Thai, Arabic, Hebrew, Hindi, Turkish, Indonesian, Filipino, Vietnamese, Japanese, Korean, English, French, German, Spanish, Portuguese, Italian, Russian, Dutch, Polish, and more. Low-resource and unspaced scripts included. |
+| Hosted NER APIs return flat spans; nesting is flattened or dropped. | **The return value is the tree.** `node.children` holds every entity contained in `node`, derived from source-text offsets (`text == source[start:end]`), so nesting is structural, not guessed. |
+| A softmax score is not a probability you can route on. | **Calibrated probabilities** from the judgment model: `0.8` behaves like "right 80% of the time", which is what confidence-gated review flows actually need. |
+| One span gets one type, even when a name is both a place and an organization. | **Multi-type entities, ranked.** `Entity.types` carries every competitive type with its probability, ordered by relevance. |
+| Every deployment downloads model weights. | **No local models at all.** A bundled Qwen3 tokenizer (100+ languages) ships inside the package; all inference goes through the EasyJev gateway. |
 
 ## Quick Start
 
@@ -76,14 +66,16 @@ That is the complete first loop: no model download, no fine-tuning, no post-proc
 
 | Capability | What you get |
 | --- | --- |
-| Nested entity forest | `ner(text)` returns `list[EntityNode]`. Offset containment builds the tree; crossing spans attach to the nearest common ancestor as siblings. |
+| Zero-shot recognition | No training, no annotation, no fine-tuning. Define what to extract and start calling. |
+| Judgment-model foundation | Noul / Choice questions with calibrated probabilities — yes/no confidence and full option distributions, not free-form generation. |
+| Nested entity forest | `ner(text)` returns `list[EntityNode]`. Crossing spans attach to the nearest common ancestor as siblings; nesting is derived from offsets, not substring guesswork. |
 | Calibrated multi-type entities | `Entity.types` is a `(EntityType, probability)` tuple sequence ranked by relevance — one entity can be GPE *and* LOC. |
-| Open taxonomy from JSON | `EntityTaxonomy.from_json` accepts a three-section document (`entity_types`, `entity_packs`, `default_packs`) that extends or overrides the 31 built-in types and 4 packs. Built for non-programmer users. |
+| 24-language coverage | Verified end to end across Asia, Europe, and the Americas, including low-resource and unspaced scripts. |
+| Open taxonomy from JSON | `EntityTaxonomy.from_json` accepts a three-section document (`entity_types`, `entity_packs`, `default_packs`) that extends or overrides the 31 built-in types and 4 packs — built for non-programmer users. |
 | Vertical entity packs | `CORE` (18 OntoNotes 5.0 types + MISC) ships by default; `BIOMED`, `FINANCE`, and `TECH` stack on demand. |
-| 24-language coverage | Verified end to end across Asia, Europe, and the Americas — Chinese, Thai, Arabic, Hebrew, Hindi, Turkish, English, French, German, Russian, Polish, Brazilian Portuguese, Mexican Spanish, and more. |
 | Gender recognition | PERSON entities are upgraded to `Person` with `MALE` / `FEMALE` / `UNKNOWN` and a probability, cached in-process. |
 | Bundled Qwen3 tokenizer | Byte-level BPE covering 100+ languages ships inside the package — no HuggingFace access, no `transformers`, no `torch`. |
-| Long documents | Sliding windows sized from the gateway's 65,535-byte request budget, 50% overlap, window-level and batch-level thread pools. |
+| Request-budget safety | Windows sized from the gateway's 65,535-byte body cap; typing batches narrowed by the 512-option cap — every request stays within limits by construction. |
 | Three-layer caching | Detection, typing, and gender results sit in LRU caches keyed by window hash; repeated or overlapping text returns in milliseconds. |
 | Typesafe throughout | Full annotations with `py.typed`, mypy-clean under strict settings, prompts rendered through the structured prompt4py templates. |
 
@@ -139,16 +131,14 @@ forest = ner("Tim Cook announced that Apple launched the new iPhone while Nike s
 
 `from_json` accepts a JSON string or an already-parsed dict. Unknown type references, empty descriptions, and unregistered default packs raise `ValueError` with the offending field path.
 
-### Tune the pipeline
+### Route on calibrated confidence
+
+Every probability comes from a judgment model trained for calibration, so thresholds mean what they say:
 
 ```python
-forest = ner(
-    long_document,
-    prob_threshold=0.7,      # stricter primary-type floor (default 0.5)
-    with_gender=False,       # skip gender judgments entirely
-    window_size=4096,        # smaller windows, more overlap
-    max_workers=4,           # window-level concurrency (default 8)
-)
+for node in ner(doc, with_gender=False):
+    if node.entity.base_probability < 0.7:
+        queue_for_human_review(node)   # 0.8 really means "right 80% of the time"
 ```
 
 Repeated calls on the same text hit the cache in milliseconds — useful for RAG re-queries and document re-runs.
@@ -182,17 +172,26 @@ JevNER owns the recognition pipeline and its contracts. It intentionally does no
 
 That boundary keeps the SDK a thin, verifiable pipeline while leaving hosting and product experience to the platform.
 
-## Performance
+## Sponsor
 
-Measured end to end on the live gateway (single sample, cost-bounded; see [docs/performance-report.md](docs/performance-report.md)):
+<div align="center">
 
-| Workload | Latency | Cached re-run |
-| --- | --- | --- |
-| Short sentence | ~12 s | ~6 ms |
-| 10-sentence paragraph | ~146 s | ~6 ms |
-| 30-sentence document, 4 windows in parallel | ~157 s (1.85–5.5× speedup) | ~6 ms |
+<a href="https://www.easyjev.online/">
+  <img src="https://raw.githubusercontent.com/vortezwohl/jev-router-web/main/public/favicon.svg" alt="EasyJev" width="128" />
+</a>
 
-The pipeline trades latency for correctness: every token is probed, every candidate span is typed with a calibrated Choice, and nested entities are all preserved. For high-frequency streaming workloads, pair JevNER with a local zero-shot tagger and reserve it for low-frequency, high-value extraction.
+### [EasyJev](https://www.easyjev.online/)
+
+**Hosted judgment-model API for Jev, the System One model from TypeSafe AI.**
+
+EasyJev serves the Jev model behind its own gateway: fully compatible with the official `typesafe-sdk`
+Python package (only `base_url` and `api_key` change), with token-precise billing, free output tokens,
+and the `jev-latest` alias version-pinned at serving time. Yes/no probabilities, option distributions,
+and ordinal scores — structured decisions instead of generated text.
+
+[Sign up &rarr;](https://www.easyjev.online/) &middot; [Terms](https://www.easyjev.online/#/tos) &middot; [Privacy](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
+
+</div>
 
 ## Development
 
