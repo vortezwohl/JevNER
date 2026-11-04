@@ -226,10 +226,9 @@ Esa frontera mantiene el SDK como un pipeline delgado y verificable, dejando el 
 
 ### [EasyJev](https://www.easyjev.online/)
 
-**Todos los modelos de decisión. Una sola API. Juicios en milisegundos.**
+**Todos los modelos System One. Un solo endpoint. Perfectamente compatible con [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python).**
 
-EasyJev es el hogar agregado de los modelos de decisión System One — **Jev, Decider, Drex, d1, Clef y más,
-de 14 proveedores, 28 modelos a la venta hoy** — tras un único endpoint compatible con `typesafe-sdk`. Una sola pasada directa completa cada juicio en milisegundos; los tokens de salida se facturan a $0 en todos los modelos, y cada llamada se liquida token a token contra el uso aguas arriba en un libro mayor de cuotas enteras (1.000.000.000 de cuotas = $1, sin deriva de coma flotante). Inicia sesión con un código por correo — tu cuenta se crea en el primer inicio, los usuarios nuevos reciben $1 de crédito de prueba, y las recargas son pagos únicos en USDT/USDC sin suscripción. Los nombres de modelos existentes (`jev-latest`, `jev-1.14.0`, …) siguen funcionando sin cambios: apunta `base_url` y `api_key` a la puerta de enlace y elige cualquier modelo por petición.
+EasyJev agrega los modelos de decisión System One — Jev, Decider, Drex, d1, Clef, kev y más de todos los proveedores — tras un único endpoint al que el [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) oficial se conecta sin ningún cambio: apunta `base_url` y `api_key` al gateway y elige cualquier modelo por petición; los nombres existentes (`jev-latest`, `jev-1.14.0`, …) siguen funcionando tal cual. Los juicios vuelven en milisegundos, los tokens de salida se facturan a $0 en todos los modelos, y el acceso es con un simple código por correo — tu cuenta se crea en el primer acceso con 1 $ de crédito de prueba. Recarga con tarjeta (Visa / Mastercard), Apple Pay, Google Pay o WeChat Pay — pagos únicos, sin suscripción.
 
 [Registrarse &rarr;](https://www.easyjev.online/) &middot; [Plaza de modelos](https://www.easyjev.online/#/models) &middot; [Playground](https://www.easyjev.online/#/playground) &middot; [Precios](https://www.easyjev.online/#/pricing) &middot; [Términos](https://www.easyjev.online/#/tos) &middot; [Privacidad](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
 

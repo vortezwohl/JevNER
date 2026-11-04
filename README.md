@@ -228,16 +228,9 @@ That boundary keeps the SDK a thin, verifiable pipeline while leaving hosting an
 
 ### [EasyJev](https://www.easyjev.online/)
 
-**Every decision model. One API. Judgments in milliseconds.**
+**Every System One model. One endpoint. Perfectly compatible with [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python).**
 
-EasyJev is the aggregated home of System One decision models — **Jev, Decider, Drex, d1, Clef and more,
-from 14 vendors, 28 models on sale today** — behind one `typesafe-sdk`-compatible endpoint. A single
-forward pass completes each judgment in milliseconds; output tokens are billed at $0 on every model,
-and every call settles token-by-token against upstream usage on an integer-quota ledger
-(1,000,000,000 quota = $1, no floating-point drift). Sign in with an email code — your account is
-created on first sign-in, new users get $1 in trial credit, and top-ups are one-time USDT/USDC
-payments with no subscription. Existing model names (`jev-latest`, `jev-1.14.0`, …) keep working
-unchanged: point `base_url` and `api_key` at the gateway and pick any model per request.
+EasyJev aggregates the System One decision models — Jev, Decider, Drex, d1, Clef, kev and more from every vendor — behind one endpoint that the official [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) plugs into unchanged: point `base_url` and `api_key` at the gateway and pick any model per request; existing model names (`jev-latest`, `jev-1.14.0`, …) keep working as-is. Judgments return in milliseconds, output tokens are billed at $0 on every model, and sign-in is just an email code — your account is created on first sign-in with $1 in trial credit. Top up by card (Visa / Mastercard), Apple Pay, Google Pay, or WeChat Pay — one-time payments, no subscription.
 
 [Sign up &rarr;](https://www.easyjev.online/) &middot; [Model Square](https://www.easyjev.online/#/models) &middot; [Playground](https://www.easyjev.online/#/playground) &middot; [Pricing](https://www.easyjev.online/#/pricing) &middot; [Terms](https://www.easyjev.online/#/tos) &middot; [Privacy](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
 

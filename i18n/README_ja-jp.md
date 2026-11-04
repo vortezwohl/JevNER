@@ -226,9 +226,9 @@ JevNER が所有するのは認識パイプラインとその契約だけ。意�
 
 ### [EasyJev](https://www.easyjev.online/)
 
-**すべての判断モデル。ひとつの API。ミリ秒の判断。**
+**すべての System One モデルを、ひとつのエンドポイントへ——[typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) と完全互換。**
 
-EasyJev は System One 判断モデルの集約ホーム —— **Jev、Decider、Drex、d1、Clef など、14 ベンダー・28 モデル** が、ひとつの `typesafe-sdk` 互換エンドポイントの背後に。単一フォワードパスで各判断をミリ秒で完了。全モデルの出力トークンは $0 課金で、呼び出しごとに上流使用量に対してトークン単位で整数クォータ台帳に決済される（1,000,000,000 クォータ = $1、浮動小数点ドリフトなし）。メール認証コードでログイン —— 初回ログインで自動アカウント作成、新規ユーザーに $1 の体験クレジット、チャージは一回払いの USDT/USDC でサブスク不要。既存のモデル名（`jev-latest`、`jev-1.14.0`…）はそのまま動く。`base_url` と `api_key` をゲートウェイに向ければ、リクエストごとに任意のモデルを選べる。
+EasyJev は各社の System One 判断モデル —— Jev、Decider、Drex、d1、Clef、kev など —— をひとつのエンドポイントに集約します。公式 [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) はそのまま差し替えるだけで動作：`base_url` と `api_key` をゲートウェイに向ければ、リクエストごとに任意のモデルを選べます。既存のモデル名（`jev-latest`、`jev-1.14.0`…）もそのまま動作します。判断はミリ秒で返り、全モデルの出力トークンは $0 課金。メール認証コードだけでログインでき、初回ログインで自動アカウント作成と $1 の体験クレジットが付与されます。チャージはクレジットカード（Visa / Mastercard）・Apple Pay・Google Pay・WeChat Pay に対応、一回払いでサブスク不要です。
 
 [登録する &rarr;](https://www.easyjev.online/) &middot; [モデル広場](https://www.easyjev.online/#/models) &middot; [Playground](https://www.easyjev.online/#/playground) &middot; [料金](https://www.easyjev.online/#/pricing) &middot; [利用規約](https://www.easyjev.online/#/tos) &middot; [プライバシー](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
 

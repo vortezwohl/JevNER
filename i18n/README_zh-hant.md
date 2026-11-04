@@ -226,9 +226,9 @@ JevNER 只擁有識別流水線及其契約。它刻意不提供：
 
 ### [EasyJev](https://www.easyjev.online/)
 
-**所有判決模型。一個 API。毫秒級判決。**
+**所有 System One 模型，一個端點——完美相容 [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python)。**
 
-EasyJev 是 System One 判決模型的聚合之家——**Jev、Decider、Drex、d1、Clef 等，來自 14 家廠商、28 個在售模型**——統一收斂在一個 `typesafe-sdk` 相容端點之後。單次前向傳播毫秒級完成每個判決；所有模型輸出詞元一律 $0 計費，每次呼叫按上游用量逐詞元結算在整數配額帳本上（1,000,000,000 配額 = $1，無浮點漂移）。信箱驗證碼登入——首次登入自動建號，新使用者贈 $1 體驗額度，儲值為一次性 USDT/USDC 支付、無需訂閱。已有模型名（`jev-latest`、`jev-1.14.0`……）原樣可用：把 `base_url` 和 `api_key` 指向閘道，每次請求任選模型。
+EasyJev 聚合各家 System One 判決模型——Jev、Decider、Drex、d1、Clef、kev 等——收斂在一個端點之後，官方 [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) 無需任何改動即可直連：把 `base_url` 和 `api_key` 指向閘道，每次請求任選模型；已有模型名（`jev-latest`、`jev-1.14.0`……）原樣可用。判決毫秒級返回，所有模型輸出詞元一律 $0 計費；信箱驗證碼即可登入——首次登入自動建號並贈 $1 體驗額度。儲值支援信用卡（Visa / Mastercard）、Apple Pay、Google Pay、微信支付，一次性付款、無需訂閱。
 
 [立即註冊 &rarr;](https://www.easyjev.online/) &middot; [模型廣場](https://www.easyjev.online/#/models) &middot; [Playground](https://www.easyjev.online/#/playground) &middot; [定價](https://www.easyjev.online/#/pricing) &middot; [服務條款](https://www.easyjev.online/#/tos) &middot; [隱私政策](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
 

@@ -226,9 +226,9 @@ JevNER가 소유하는 것은 인식 파이프라인과 그 계약뿐입니다. 
 
 ### [EasyJev](https://www.easyjev.online/)
 
-**모든 판단 모델. 하나의 API. 밀리초 단위 판단.**
+**모든 System One 모델, 하나의 엔드포인트 — [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) 와 완벽 호환.**
 
-EasyJev는 System One 판단 모델의 통합 본거지입니다 — **Jev, Decider, Drex, d1, Clef 등 14개 벤더의 28개 판매 중 모델**이 하나의 `typesafe-sdk` 호환 엔드포인트 뒤에 모여 있습니다. 단일 순전파로 각 판단을 밀리초에 완료. 모든 모델의 출력 토큰은 $0로 과금되고, 모든 호출은 상류 사용량에 대해 토큰 단위로 정수 쿼터 장부에 정산됩니다(1,000,000,000 쿼터 = $1, 부동소수점 드리프트 없음). 이메일 인증 코드로 로그인 — 첫 로그인 시 자동 계정 생성, 신규 사용자에게 $1 체험 크레딧, 충전은 일회성 USDT/USDC 결제에 구독 없음. 기존 모델 이름(`jev-latest`, `jev-1.14.0`…)은 그대로 동작합니다. `base_url`과 `api_key`를 게이트웨이로 향하게 하고 요청마다 원하는 모델을 고르세요.
+EasyJev는 각 벤더의 System One 판단 모델 — Jev, Decider, Drex, d1, Clef, kev 등 — 을 하나의 엔드포인트 뒤에 모읍니다. 공식 [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) 는 수정 없이 그대로 연결됩니다: `base_url`과 `api_key`를 게이트웨이로 향하게 하면 요청마다 원하는 모델을 고를 수 있고, 기존 모델 이름(`jev-latest`, `jev-1.14.0`…)도 그대로 동작합니다. 판단은 밀리초에 돌아오고 모든 모델의 출력 토큰은 $0로 과금됩니다. 이메일 인증 코드만으로 로그인할 수 있으며 첫 로그인 시 자동 계정 생성과 함께 $1 체험 크레딧이 지급됩니다. 충전은 카드(Visa / Mastercard)·Apple Pay·Google Pay·WeChat Pay를 지원하며, 일회성 결제에 구독은 없습니다.
 
 [가입하기 &rarr;](https://www.easyjev.online/) &middot; [모델 광장](https://www.easyjev.online/#/models) &middot; [Playground](https://www.easyjev.online/#/playground) &middot; [요금제](https://www.easyjev.online/#/pricing) &middot; [약관](https://www.easyjev.online/#/tos) &middot; [개인정보](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
 

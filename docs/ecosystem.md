@@ -24,8 +24,8 @@ Choice per span for typing, one Noul per name for gender).
 
 | Project | What it is | Why it matters to JevNER |
 | --- | --- | --- |
-| [TypeSafe](https://docs.typesafe.ai/) | The protocol steward; ships the **Jev** model family (`jev-1.13`, `jev-1.14`, `jev-latest`) and the `typesafe-sdk` client that JevNER is built on | Defines the wire contract (`POST /v1/systemone`) and the Noul/Choice/Score primitives |
-| [EasyJev](https://www.easyjev.online/) | Aggregated gateway: Jev, Decider, Drex, d1, Clef, kev and more — 14 vendors behind one `typesafe-sdk`-compatible endpoint | The default `base_url` of JevNER; one key, any decision model |
+| [TypeSafe](https://docs.typesafe.ai/) | The protocol steward; ships the **Jev** model family (`jev-1.13`, `jev-1.14`, `jev-latest`) and the open-source [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) client that JevNER is built on | Defines the wire contract (`POST /v1/systemone`) and the Noul/Choice/Score primitives |
+| [EasyJev](https://www.easyjev.online/) | Aggregated gateway: Jev, Decider, Drex, d1, Clef, kev and more from every vendor, behind one endpoint fully compatible with the [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) | The default `base_url` of JevNER; one key, any decision model |
 | [NandhaKishorM/laya](https://github.com/NandhaKishorM/laya) | Non-autoregressive decision engine: typed choice, score, and yes/no decisions over any text in a single forward pass, 100+ languages, per-request checkpoint routing (~35k stars) | The most-watched open decision engine; proves the demand for typed, calibrated decisions. Ports: [laya-mlx](https://github.com/mizorewww/laya-mlx), [laya-coreml](https://github.com/mizorewww/laya-coreml) |
 | [jaredpalmer/kev](https://github.com/jaredpalmer/kev) | Open decision models built on Qwen (~9.8k stars) | `jaredpalmer/kev-4b` is served on the EasyJev gateway — an open-weights decision model you can point JevNER at today |
 | [nokia-applied-research/AnyJev](https://github.com/nokia-applied-research/AnyJev) | Turns any LLM into a decision model | The bridge layer that could widen the model supply behind the protocol |

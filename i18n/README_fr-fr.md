@@ -226,10 +226,9 @@ Cette frontière garde le SDK comme un pipeline fin et vérifiable, en laissant 
 
 ### [EasyJev](https://www.easyjev.online/)
 
-**Tous les modèles de décision. Une seule API. Des jugements en millisecondes.**
+**Tous les modèles System One. Un seul endpoint. Parfaitement compatible avec [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python).**
 
-EasyJev est le foyer agrégé des modèles de décision System One — **Jev, Decider, Drex, d1, Clef et plus,
-de 14 fournisseurs, 28 modèles en vente aujourd'hui** — derrière un seul point de terminaison compatible `typesafe-sdk`. Une unique passe avant complète chaque jugement en millisecondes ; les tokens de sortie sont facturés $0 sur tous les modèles, et chaque appel est réglé token par token sur un registre à quota entier (1 000 000 000 quotas = $1, sans dérive flottante). Connexion par code e-mail — votre compte est créé à la première connexion, les nouveaux utilisateurs reçoivent 1 $ de crédit d'essai, et les rechargements sont des paiements USDT/USDC ponctuels sans abonnement. Les noms de modèles existants (`jev-latest`, `jev-1.14.0`, …) continuent de fonctionner tels quels : pointez `base_url` et `api_key` vers la passerelle et choisissez n'importe quel modèle par requête.
+EasyJev agrège les modèles de décision System One — Jev, Decider, Drex, d1, Clef, kev et plus, de tous les fournisseurs — derrière un seul endpoint où le [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) officiel se branche sans aucune modification : pointez `base_url` et `api_key` vers la passerelle et choisissez n'importe quel modèle par requête ; les noms existants (`jev-latest`, `jev-1.14.0`, …) continuent de fonctionner tels quels. Les jugements reviennent en millisecondes, les tokens de sortie sont facturés $0 sur tous les modèles, et la connexion se fait par simple code e-mail — votre compte est créé au premier accès avec 1 $ de crédit d'essai. Rechargez par carte (Visa / Mastercard), Apple Pay, Google Pay ou WeChat Pay — paiement ponctuel, sans abonnement.
 
 [S'inscrire &rarr;](https://www.easyjev.online/) &middot; [Place des modèles](https://www.easyjev.online/#/models) &middot; [Playground](https://www.easyjev.online/#/playground) &middot; [Tarifs](https://www.easyjev.online/#/pricing) &middot; [Conditions](https://www.easyjev.online/#/tos) &middot; [Confidentialité](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
 
