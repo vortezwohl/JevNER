@@ -10,10 +10,11 @@
 
 <p>
   <a href="https://www.easyjev.online/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vortezwohl/jev-router-web/main/public/favicon.svg" />
-      <img src="https://raw.githubusercontent.com/vortezwohl/jev-router-web/main/public/favicon.svg" alt="EasyJev" width="72" />
-    </picture>
+    <img src="assets/easyjev-logo.svg" alt="EasyJev logo" width="72" />
+  </a>
+  <br/>
+  <strong>Sponsored by <a href="https://www.easyjev.online/">EasyJev</a> — every decision model, one endpoint.</strong>
+</p>
   </a>
   <br/>
   <strong>Sponsored by <a href="https://www.easyjev.online/">EasyJev</a> — every decision model, one endpoint.</strong>
@@ -188,7 +189,7 @@ That boundary keeps the SDK a thin, verifiable pipeline while leaving hosting an
 <div align="center">
 
 <a href="https://www.easyjev.online/">
-  <img src="https://raw.githubusercontent.com/vortezwohl/jev-router-web/main/public/favicon.svg" alt="EasyJev" width="128" />
+  <img src="assets/easyjev-logo.svg" alt="EasyJev logo" width="128" />
 </a>
 
 ### [EasyJev](https://www.easyjev.online/)
