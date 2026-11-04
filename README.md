@@ -8,6 +8,17 @@
 
 *A typesafe Python SDK that turns a judgment model into a named entity recognizer — nested entity trees, custom entity packs, and a bundled Qwen3 tokenizer, with no local models to train or deploy.*
 
+<p>
+  <a href="https://www.easyjev.online/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vortezwohl/jev-router-web/main/public/favicon.svg" />
+      <img src="https://raw.githubusercontent.com/vortezwohl/jev-router-web/main/public/favicon.svg" alt="EasyJev" width="72" />
+    </picture>
+  </a>
+  <br/>
+  <strong>Sponsored by <a href="https://www.easyjev.online/">EasyJev</a> — every decision model, one endpoint.</strong>
+</p>
+
 [![PyPI](https://img.shields.io/pypi/v/jevner?style=flat-square&color=8CE838&label=PyPI)](https://pypi.org/project/jevner/)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-2563EB?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
 [![License](https://img.shields.io/badge/License-MIT-6366F1?style=flat-square&labelColor=10140A)](LICENSE)
@@ -182,14 +193,18 @@ That boundary keeps the SDK a thin, verifiable pipeline while leaving hosting an
 
 ### [EasyJev](https://www.easyjev.online/)
 
-**Hosted judgment-model API for Jev, the System One model from TypeSafe AI.**
+**Every decision model. One API. Judgments in milliseconds.**
 
-EasyJev serves the Jev model behind its own gateway: fully compatible with the official `typesafe-sdk`
-Python package (only `base_url` and `api_key` change), with token-precise billing, free output tokens,
-and the `jev-latest` alias version-pinned at serving time. Yes/no probabilities, option distributions,
-and ordinal scores — structured decisions instead of generated text.
+EasyJev is the aggregated home of System One decision models — **Jev, Decider, Drex, d1, Clef and more,
+from 14 vendors, 28 models on sale today** — behind one `typesafe-sdk`-compatible endpoint. A single
+forward pass completes each judgment in milliseconds; output tokens are billed at $0 on every model,
+and every call settles token-by-token against upstream usage on an integer-quota ledger
+(1,000,000,000 quota = $1, no floating-point drift). Sign in with an email code — your account is
+created on first sign-in, new users get $1 in trial credit, and top-ups are one-time USDT/USDC
+payments with no subscription. Existing model names (`jev-latest`, `jev-1.14.0`, …) keep working
+unchanged: point `base_url` and `api_key` at the gateway and pick any model per request.
 
-[Sign up &rarr;](https://www.easyjev.online/) &middot; [Terms](https://www.easyjev.online/#/tos) &middot; [Privacy](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
+[Sign up &rarr;](https://www.easyjev.online/) &middot; [Model Square](https://www.easyjev.online/#/models) &middot; [Playground](https://www.easyjev.online/#/playground) &middot; [Pricing](https://www.easyjev.online/#/pricing) &middot; [Terms](https://www.easyjev.online/#/tos) &middot; [Privacy](https://www.easyjev.online/#/privacy) &middot; support@easyjev.online
 
 </div>
 
