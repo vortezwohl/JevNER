@@ -41,7 +41,7 @@ def strip_edge_punctuation(text: str) -> str:
     """Strip leading/trailing whitespace and punctuation from a string.
 
     Token-offset slices often pull adjacent punctuation into a
-    candidate span (e.g. "子豪,"), which pollutes entity text and
+    candidate span (e.g. a name plus a comma), which pollutes entity text and
     breaks cross-span containment tests if left in place.
 
     Args:

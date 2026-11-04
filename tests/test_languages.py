@@ -13,7 +13,7 @@ from jevner import JevNER
 # (language, continent, test text, expected entity substring)
 LANGUAGE_CASES: list[tuple[str, str, str, str]] = [
     # --- Asia ---
-    ("Chinese", "Asia", "你好，我的名字是吴子豪，来自福建福州。", "吴子豪"),
+    ("Chinese", "Asia", "你好，我的名字是陈嘉禾，来自江苏南京。", "陈嘉禾"),
     ("Japanese", "Asia", "田中さんは東京大学の学生です。", "田中"),
     ("Korean", "Asia", "김철수 씨는 서울에서 삽니다.", "서울"),
     ("Thai", "Asia", "สวัสดีครับ ผมชื่อสมชาย มาจากกรุงเทพมหานคร", "สมชาย"),

@@ -9,9 +9,9 @@ load_dotenv()
 ner = JevNER()  # credentials read from TYPESAFE_API_KEY / TYPESAFE_BASE_URL
 
 # The return value is the nested entity forest: pp prints the readable structure.
-forest = ner("你好, 我的名字是吴子豪, 来自福建福州.")
+forest = ner("你好, 我的名字是陈嘉禾, 来自江苏南京.")
 pp(forest)
-# 吴子豪 (PERSON 1.00 | MALE 1.00) [9:12]
+# 陈嘉禾 (PERSON 1.00 | MALE 1.00) [9:12]
 
 forest = ner("สวัสดีครับ ผมชื่อสมชาย มาจากกรุงเทพมหานคร")  # Thai
 pp(forest)
@@ -23,7 +23,7 @@ pp(forest)
 # Japan (GPE 1.00) [10:15]
 
 # Vertical domain: enable the biomedical pack by name.
-forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=["BIOMED"])
+forest = ner("患者确诊为二型糖尿病, 服用阿司匹林控制血糖.", entity_packs=["BIOMED"])
 pp(forest)
 # 二型糖尿病 (DISEASE 1.00) [5:10]
 

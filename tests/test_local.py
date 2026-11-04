@@ -30,7 +30,7 @@ from jevner.ner import (
 from jevner.tokenizer import BundledTokenizer, strip_edge_punctuation, strip_span
 
 # Chinese (unspaced) + Thai (complex clusters) + Arabic (RTL)
-ZH_TEXT = "你好, 我的名字是吴子豪, 来自福建福州."
+ZH_TEXT = "你好, 我的名字是陈嘉禾, 来自江苏南京."
 TH_TEXT = "สวัสดีครับผมชื่อสมชายมาจากกรุงเทพมหานคร"
 AR_TEXT = "مرحبا اسمي محمد وأعمل في شركة أرامكو في الرياض"
 
@@ -61,11 +61,11 @@ assert wins[0][0] == ZH_TEXT and len(wins[0][1]) == counts[ZH_TEXT], (
 print(f"[4] Single window for short text + 12k default ({DEFAULT_WINDOW_SIZE} tokens): OK")
 
 # long text: multi-window overlap, key entities covered, offsets source-anchored
-long_zh = "。".join(f"第{i}句话提到北京和上海以及腾讯公司" for i in range(80))
+long_zh = "。".join(f"第{i}句话提到北京和广州以及华为公司" for i in range(80))
 wins = tokenizer.windows(long_zh, window_size=64, stride=32)
 assert len(wins) > 1, "long text should split into multiple windows"
 covered = "".join(tok for _wt, w in wins for _s, _e, tok in w)
-assert "北京" in covered and "上海" in covered and "腾讯" in covered, (
+assert "北京" in covered and "广州" in covered and "华为" in covered, (
     "key entities must appear in the windows"
 )
 for window_text, w in wins:
@@ -188,8 +188,8 @@ ents = [
     # nested inner GPE [0,7)
     Entity(text="中华人民共和国", types=((T["GPE"], 1.00),), start=0, end=7),
     # independent entities at other positions
-    Entity(text="福建", types=((T["GPE"], 1.00),), start=16, end=18),
-    Entity(text="福州", types=((T["GPE"], 0.99),), start=18, end=20),
+    Entity(text="江苏", types=((T["GPE"], 1.00),), start=16, end=18),
+    Entity(text="南京", types=((T["GPE"], 0.99),), start=18, end=20),
 ]
 merged = combiner._combine(ents, deduplicate=True)
 by_span = {(e.start, e.end): e for e in merged}
@@ -209,7 +209,7 @@ nested = [
         text="中华人民共和国", types=((T["GPE"], 1.00),), start=0, end=7
     ),  # inner GPE of the outer span
     Entity(
-        text="耿爽", types=((T["PERSON"], 0.90),), start=9, end=11
+        text="周明远", types=((T["PERSON"], 0.90),), start=9, end=11
     ),  # crossing: inside ORG, outside GPE
     Entity(text="北京", types=((T["GPE"], 0.95),), start=14, end=16),  # independent top-level
 ]
@@ -221,7 +221,7 @@ assert set(top_texts) == {"中华人民共和国外交部发言人", "北京"}, 
 outer = next(n for n in roots if n.entity.text == "中华人民共和国外交部发言人")
 child_texts = [c.entity.text for c in outer.children]
 # inner GPE and crossing PERSON both sit under the outer (siblings)
-assert set(child_texts) == {"中华人民共和国", "耿爽"}, (
+assert set(child_texts) == {"中华人民共和国", "周明远"}, (
     f"nested/crossing attach to the common ancestor: {child_texts}"
 )
 gpe_child = next(c for c in outer.children if c.entity.text == "中华人民共和国")
@@ -233,7 +233,7 @@ assert "├──" in rendered and "└──" in rendered, (
 print("[11] 实体嵌套树 + 交叉嵌套 + 渲染: OK")
 print(rendered)
 person = Person(
-    text="耿爽",
+    text="周明远",
     types=((T["PERSON"], 0.9),),
     start=9,
     end=11,

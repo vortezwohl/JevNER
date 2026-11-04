@@ -48,13 +48,13 @@ from jevner import JevNER
 ner = JevNER()  # credentials read from TYPESAFE_API_KEY / TYPESAFE_BASE_URL
 
 # The return value IS the nested forest: printing it renders a tree.
-forest = ner("你好, 我的名字是吴子豪, 来自福建福州.")
+forest = ner("你好, 我的名字是陈嘉禾, 来自江苏南京.")
 for node in forest:
     print(node)
-# 吴子豪 (PERSON 1.00 | MALE 1.00) [9:12]
-# 福建福州 (GPE 1.00) [16:20]
-# ├── 福建 (GPE 1.00) [16:18]
-# └── 福州 (GPE 1.00) [18:20]
+# 陈嘉禾 (PERSON 1.00 | MALE 1.00) [9:12]
+# 江苏南京 (GPE 1.00) [16:20]
+# ├── 江苏 (GPE 1.00) [16:18]
+# └── 南京 (GPE 1.00) [18:20]
 ```
 
 That is the complete first loop: no model download, no fine-tuning, no post-processing. PERSON entities are upgraded to `Person` with a gender judgment, offsets always satisfy `text == source[start:end]`, and nesting rides in the return value itself.
@@ -98,12 +98,12 @@ Packs stack by name; the type table sent to the model contains exactly the union
 
 ```python
 forest = ner(
-    "患者确诊为二型糖尿病, 服用二甲双胍控制血糖.",
+    "患者确诊为二型糖尿病, 服用阿司匹林控制血糖.",
     entity_packs=["BIOMED"],
 )
 # 二型糖尿病 (DISEASE 1.00) [5:10]
 # ├── 糖尿病 (DISEASE 0.99) [7:10]
-# 二甲双胍 (DRUG 1.00) [14:18]
+# 阿司匹林 (DRUG 1.00) [14:18]
 ```
 
 ### Define a taxonomy from JSON

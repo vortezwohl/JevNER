@@ -383,7 +383,7 @@ class JevNER:
             if not pairs:
                 continue
             # Each token question carries its neighbors: whether an isolated single
-            # character belongs to an entity is context-dependent ("吴" alone is
+            # character belongs to an entity is context-dependent (a lone surname is
             # undecidable; with neighbors it is), giving detection region vision.
             questions: dict[str, Noul] = {
                 f"tok_{i}": Noul(
@@ -683,12 +683,12 @@ class JevNER:
           from overlapping windows or batches merge into one entity,
           taking the union of types and the max probability per type;
         - Different occurrences: kept independently — spans in a
-          containment relation are nested entities (e.g. GPE "福建"
-          [16:18] inside GPE "福建福州" [16:20]); the merge stage never
+          containment relation are nested entities (e.g. GPE "江苏"
+          [16:18] inside GPE "江苏南京" [16:20]); the merge stage never
           absorbs or drops either side, and relations are derived
           entirely downstream by entity_tree() from offset containment.
 
-        Fragment noise (detection-variance artifacts like PERSON "吴")
+        Fragment noise (detection-variance artifacts like PERSON single-character fragments)
         is not intercepted here — the typing stage NONE veto filters
         it at the source.
 

@@ -14,7 +14,7 @@ import time
 
 from jevner import EntityTaxonomy, JevNER
 
-SHORT = "你好, 我的名字是吴子豪, 来自福建福州."
+SHORT = "你好, 我的名字是陈嘉禾, 来自江苏南京."
 MEDIUM = ". ".join(
     f"In {2019 + i % 3}, Maria Curie visited Paris where she met Doctor Strange at Microsoft."
     for i in range(10)

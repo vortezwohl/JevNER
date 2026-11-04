@@ -15,7 +15,7 @@ from jevner.entities import DEFAULT_TAXONOMY
 
 T = DEFAULT_TAXONOMY.entity_types  # label -> EntityType lookup table
 
-ZH_TEXT = "你好, 我的名字是吴子豪, 来自福建福州."
+ZH_TEXT = "你好, 我的名字是陈嘉禾, 来自江苏南京."
 
 ner = JevNER(max_workers=4)
 
@@ -28,10 +28,10 @@ def show(forest: list) -> None:
 print("===== [1] Chinese short text (CORE + gender) =====")
 forest = ner(ZH_TEXT)
 show(forest)
-assert any(isinstance(n.entity, Person) and n.entity.text == "吴子豪" for n in forest), (
-    f"should recognize 吴子豪: {forest}"
+assert any(isinstance(n.entity, Person) and n.entity.text == "陈嘉禾" for n in forest), (
+    f"should recognize 陈嘉禾: {forest}"
 )
-# nested entities must coexist: 福建/福州 inner, 福建福州 outer
+# nested entities must coexist: 江苏/南京 inner, 江苏南京 outer
 # (collect recursively — inner entities are not top-level)
 
 
@@ -46,25 +46,25 @@ def flatten(nodes: list) -> list:
 
 all_nodes = flatten(forest)
 flat_texts = {n.entity.text for n in all_nodes}
-assert {"福建", "福州"} <= flat_texts, (
+assert {"江苏", "南京"} <= flat_texts, (
     f"flat return must keep inner nested entities: {sorted(flat_texts)}"
 )
-assert "福建福州" in flat_texts, f"flat return must keep the compound entity: {sorted(flat_texts)}"
-assert all(not t.startswith("来自") for t in flat_texts if t != "福建福州"), (
+assert "江苏南京" in flat_texts, f"flat return must keep the compound entity: {sorted(flat_texts)}"
+assert all(not t.startswith("来自") for t in flat_texts if t != "江苏南京"), (
     f"entities must not glue verbs: {flat_texts}"
 )
 # 低置信碎片不混入：所有实体（含内层）的主类型概率必须过默认阈值 0.5
 for n in all_nodes:
     assert n.entity.base_probability >= 0.5, f"low-confidence fragment leaked in: {n.entity}"
 wuzihao = next(
-    n.entity for n in forest if isinstance(n.entity, Person) and n.entity.text == "吴子豪"
+    n.entity for n in forest if isinstance(n.entity, Person) and n.entity.text == "陈嘉禾"
 )
 assert wuzihao.gender in (Gender.MALE, Gender.FEMALE, Gender.UNKNOWN)
-print(f"  -> 吴子豪 性别: {wuzihao.gender.value}, 概率: {wuzihao.gender_probability}")
-# 福建福州 must contain 福建/福州 as children (nesting rides in the return)
-fz = next(n for n in forest if n.entity.text == "福建福州")
+print(f"  -> 陈嘉禾 性别: {wuzihao.gender.value}, 概率: {wuzihao.gender_probability}")
+# 江苏南京 must contain 江苏/南京 as children (nesting rides in the return)
+fz = next(n for n in forest if n.entity.text == "江苏南京")
 inner = {c.entity.text for c in fz.children}
-assert inner == {"福建", "福州"}, f"inner of 福建福州 should be 福建/福州: {sorted(inner)}"
+assert inner == {"江苏", "南京"}, f"inner of 江苏南京 should be 江苏/南京: {sorted(inner)}"
 
 print()
 print("===== [2] multi-type entities (country as region and place) =====")
@@ -107,7 +107,7 @@ if bank is not None and bank.children:
     inner = [c.entity.text for c in bank.children]
     print(f"  Bank of America 内层: {inner}")
 # Chinese nesting (deterministic logic covered by offline tests)
-zh_nested_text = "中华人民共和国外交部发言人耿爽在北京举行记者会"
+zh_nested_text = "中华人民共和国外交部发言人周明远在北京举行记者会"
 zh_forest = ner(zh_nested_text, with_gender=False)
 for n in flatten(zh_forest):
     assert zh_nested_text[n.entity.start : n.entity.end] == n.entity.text, (
@@ -119,14 +119,14 @@ assert ("中华人民共和国外交部" in {n.entity.text for n in flatten(zh_f
 
 print()
 print("===== [4] vertical pack (BIOMED) =====")
-med_text = "患者确诊为二型糖尿病, 服用二甲双胍控制血糖, 并检测了 BRCA1 基因与胰岛素水平."
+med_text = "患者确诊为二型糖尿病, 服用阿司匹林控制血糖, 并检测了 BRCA1 基因与胰岛素水平."
 forest = ner(med_text, entity_packs=["BIOMED"], with_gender=False)
 show(forest)
 all_types = {t for n in forest for t, _ in n.entity.types}
 assert T["DISEASE"] in all_types, f"should recognize the disease: {forest}"
-# drug allows token-level variance: 二甲双胍 or truncated forms both pass
+# drug allows token-level variance: 阿司匹林 or truncated forms both pass
 med_texts = {n.entity.text for n in forest}
-assert any("双胍" in t for t in med_texts), (
+assert any("阿司匹林".startswith(t) or "司匹林" in t for t in med_texts), (
     f"should recognize the drug (token-variance forms ok): {forest}"
 )
 # offset invariant: entity text must be an exact source substring
@@ -162,8 +162,8 @@ assert all(not isinstance(n.entity, Person) for n in forest), (
 )
 pack: str = "BIOMED"
 ner("苹果公司发布了新产品", entity_packs=[pack], with_gender=False)
-# gender cache hit (吴子豪 judged in [1])
-assert ner._gender_cache.read("吴子豪") is not None, "cache should hit"
+# gender cache hit (陈嘉禾 judged in [1])
+assert ner._gender_cache.read("陈嘉禾") is not None, "cache should hit"
 
 ner.close()
 print()

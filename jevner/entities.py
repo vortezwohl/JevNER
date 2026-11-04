@@ -448,7 +448,7 @@ class EntityNode:
 
         Returns:
             Tree text, e.g.
-            "福建福州 (GPE 1.00) [16:20]\\n├── 福建 (GPE 1.00) [16:18]".
+            "江苏南京 (GPE 1.00) [16:20]\\n├── 江苏 (GPE 1.00) [16:18]".
         """
         return "\n".join(_render_node(self, ""))
 

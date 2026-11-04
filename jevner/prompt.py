@@ -69,7 +69,7 @@ def render_detection_state(source_text: str) -> str:
             "verbs, pronouns, and adjectives are not named entities."
         ),
         "examples": [
-            'In "吴子豪来自福建", the tokens "吴", "子", "豪" are parts of a person '
+            'In "陈嘉禾来自江苏", the tokens "陈", "嘉", "禾" are parts of a person '
             'name (yes); the verb "来自" is not (no).',
             'In "กรุงเทพมหานคร" (Bangkok Metropolis), the tokens "กร", "ุง", "เทพ" '
             "are each parts of the place name (yes).",

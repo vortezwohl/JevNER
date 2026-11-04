@@ -12,7 +12,7 @@ v3 supersedes v2 by adding the model switch (jev-latest -> baseten/mammoth-1) an
 | --- | --- | --- | --- |
 | Window size | 240k tokens | 12k tokens (derived from the 65,535-byte request-body hard limit) | Unnoticeable for short texts; more windows for long documents |
 | Typing criteria | label + every type description | label only (descriptions appear once, in the state type table) | Per-question size ~2KB -> ~150B |
-| Entity output | same-type overlap absorption | nested entities all survive (福建/福州/福建福州 coexist) | Typing question count multiplies by ~5-9 |
+| Entity output | same-type overlap absorption | nested entities all survive (江苏/南京/江苏南京 coexist) | Typing question count multiplies by ~5-9 |
 | Detection batch | 256 questions/request | 64 questions/request (in-batch interference) | Detection request count x4 |
 | Detection stability | single pass + one gray-zone recheck | gray-zone three-round recheck, keep max (threshold 0.25) | 0-3 extra detection rounds |
 | Type system | closed enum | open taxonomy (JSON-customizable) | Type table rides in the state; more types, bigger state |
