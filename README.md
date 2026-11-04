@@ -25,7 +25,7 @@
 
 [Why](#why-jevner) &middot; [Installation](#installation) &middot; [Quick start](#quick-start) &middot; [Capabilities](#core-capabilities) &middot; [Models](#decision-models) &middot; [Comparisons](#ecosystem--comparisons) &middot; [API](#public-api) &middot; [Boundaries](#design-boundaries) &middot; [Sponsor](#sponsor)
 
-English | [简体中文](/vortezwohl/JevNER/blob/main/i18n/README_zh-hans.md) | [繁體中文](/vortezwohl/JevNER/blob/main/i18n/README_zh-hant.md) | [日本語](/vortezwohl/JevNER/blob/main/i18n/README_ja-jp.md) | [한국어](/vortezwohl/JevNER/blob/main/i18n/README_ko-kr.md) | [Français](/vortezwohl/JevNER/blob/main/i18n/README_fr-fr.md) | [Español](/vortezwohl/JevNER/blob/main/i18n/README_es-es.md) | [Deutsch](/vortezwohl/JevNER/blob/main/i18n/README_de-de.md) | [Português](/vortezwohl/JevNER/blob/main/i18n/README_pt-br.md)
+English | [简体中文](i18n/README_zh-hans.md) | [繁體中文](i18n/README_zh-hant.md) | [日本語](i18n/README_ja-jp.md) | [한국어](i18n/README_ko-kr.md) | [Français](i18n/README_fr-fr.md) | [Español](i18n/README_es-es.md) | [Deutsch](i18n/README_de-de.md) | [Português](i18n/README_pt-br.md)
 
 </div>
 

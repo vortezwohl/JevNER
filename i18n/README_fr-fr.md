@@ -23,7 +23,7 @@
 
 **Zéro entraînement. Toutes les langues. L'arbre est dans la valeur de retour.**
 
-[English](/vortezwohl/JevNER#readme) | [简体中文](/vortezwohl/JevNER/blob/main/i18n/README_zh-hans.md) | [繁體中文](/vortezwohl/JevNER/blob/main/i18n/README_zh-hant.md) | [日本語](/vortezwohl/JevNER/blob/main/i18n/README_ja-jp.md) | [한국어](/vortezwohl/JevNER/blob/main/i18n/README_ko-kr.md) | Français | [Español](/vortezwohl/JevNER/blob/main/i18n/README_es-es.md) | [Deutsch](/vortezwohl/JevNER/blob/main/i18n/README_de-de.md) | [Português](/vortezwohl/JevNER/blob/main/i18n/README_pt-br.md)
+[English](../README.md) | [简体中文](README_zh-hans.md) | [繁體中文](README_zh-hant.md) | [日本語](README_ja-jp.md) | [한국어](README_ko-kr.md) | Français | [Español](README_es-es.md) | [Deutsch](README_de-de.md) | [Português](README_pt-br.md)
 
 </div>
 

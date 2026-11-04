@@ -23,7 +23,7 @@
 
 **Kein Training. Jede Sprache. Der Baum kommt im Rückgabewert.**
 
-[English](/vortezwohl/JevNER#readme) | [简体中文](/vortezwohl/JevNER/blob/main/i18n/README_zh-hans.md) | [繁體中文](/vortezwohl/JevNER/blob/main/i18n/README_zh-hant.md) | [日本語](/vortezwohl/JevNER/blob/main/i18n/README_ja-jp.md) | [한국어](/vortezwohl/JevNER/blob/main/i18n/README_ko-kr.md) | [Français](/vortezwohl/JevNER/blob/main/i18n/README_fr-fr.md) | [Español](/vortezwohl/JevNER/blob/main/i18n/README_es-es.md) | Deutsch | [Português](/vortezwohl/JevNER/blob/main/i18n/README_pt-br.md)
+[English](../README.md) | [简体中文](README_zh-hans.md) | [繁體中文](README_zh-hant.md) | [日本語](README_ja-jp.md) | [한국어](README_ko-kr.md) | [Français](README_fr-fr.md) | [Español](README_es-es.md) | Deutsch | [Português](README_pt-br.md)
 
 </div>
 
