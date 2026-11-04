@@ -1,10 +1,11 @@
-"""jevner 精简性能实验：单进程最小成本拿核心数据点。
+"""jevner compact performance experiment: core data points in one process.
 
-设计原则：一次进程跑完、总调用约 8 次、每次测量单样本。
-数据点：E1 短/中/长延迟（串行）、E2 缓存冷/热、E3 并行 1 vs 4
-（30 句文本 + 小窗口强制 4 窗）、E4 JSON taxonomy 构建与识别。
+One process, ~8 API calls total, one sample per measurement.
+Data points: E1 short/medium/long latency (serial), E2 cache cold/hot,
+E3 parallel 1 vs 4 (30 sentences, small windows -> 4 windows), E4 JSON
+taxonomy build + recognition.
 
-运行：PYTHONPATH=. uv run python tests/bench_quick.py
+Run: PYTHONPATH=. uv run python tests/bench_quick.py
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ def timed(fn):
 
 
 def count_nodes(forest: list) -> int:
-    """递归统计森林全部节点数。"""
+    """Count all nodes of a forest recursively."""
     total = 0
     stack = list(forest)
     while stack:
@@ -55,23 +56,24 @@ def count_nodes(forest: list) -> int:
 
 
 def main() -> None:
-    print("== E1 单文本延迟 (max_workers=1) ==")
+    print("== E1 single-text latency (max_workers=1) ==")
     ner = JevNER(max_workers=1)
     for name, text in (("short", SHORT), ("medium", MEDIUM), ("long", LONG)):
         tokens = ner._tokenizer.count_tokens(text)
         latency, forest = timed(lambda n=ner, t=text: n(t, with_gender=True))
         print(
             f"  {name:6s}: {latency:7.2f}s | {tokens} tokens "
-            f"| {count_nodes(forest)} entities (含嵌套)"
+            f"| {count_nodes(forest)} entities (nesting incl.)"
         )
 
-    print("== E2 缓存收益 (MEDIUM 同实例二次调用) ==")
+    print("== E2 cache benefit (MEDIUM, same instance) ==")
     cold, _ = timed(lambda: ner(MEDIUM, with_gender=False))
     warm, _ = timed(lambda: ner(MEDIUM, with_gender=False))
-    print(f"  冷: {cold:6.2f}s | 热(全缓存): {warm:6.3f}s | 加速: {cold / max(warm, 1e-6):.0f}x")
+    speedup = cold / max(warm, 1e-6)
+    print(f"  cold: {cold:6.2f}s | warm (cached): {warm:6.3f}s | speedup: {speedup:.0f}x")
     ner.close()
 
-    print("== E3 窗口级并行 (30 句文本, window=1024 → 4 窗口) ==")
+    print("== E3 window parallelism (30 sentences, window=1024 -> 4 windows) ==")
     for workers in (1, 4):
         para = JevNER(max_workers=workers)
         latency, forest = timed(
@@ -80,7 +82,7 @@ def main() -> None:
         print(f"  workers={workers}: {latency:7.2f}s | {count_nodes(forest)} entities")
         para.close()
 
-    print("== E4 JSON 自定义 taxonomy ==")
+    print("== E4 JSON custom taxonomy ==")
     build, taxonomy = timed(lambda: EntityTaxonomy.from_json(CUSTOM_JSON))
     custom = JevNER(taxonomy=taxonomy, max_workers=1)
     latency, forest = timed(lambda: custom(BRAND_TEXT, with_gender=False))
@@ -91,10 +93,10 @@ def main() -> None:
         texts.add(node.entity.text)
         stack.extend(node.children)
     brands = [t for t in texts if t in ("Apple", "Nike", "Amazon Web Services")]
-    print(f"  from_json 构建: {build:.4f}s | 识别: {latency:.2f}s | BRAND 命中: {brands}")
+    print(f"  from_json build: {build:.4f}s | recognize: {latency:.2f}s | BRAND hits: {brands}")
     custom.close()
 
-    print("实验完成。")
+    print("Experiment complete.")
 
 
 if __name__ == "__main__":

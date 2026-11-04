@@ -1,30 +1,40 @@
-"""JevNER 主实现：无本地模型的滑动窗口命名实体识别。
+"""JevNER core: sliding-window named entity recognition with no local models.
 
-本模块实现 jevner SDK 的核心算法。整体结构与 DeepLoTX BertNER
-同构（滑动窗口 + 跨窗口合并 + 性别增强），但用 TypeSafe 的 System One
-模型 jev 替代全部本地 BERT 推理，并用"词元检测 + 区间分型"两阶段替代
-BertNER 的固定 n-gram 候选，以兼容全球语种：
+This module implements the jevner SDK pipeline. The overall structure
+mirrors DeepLoTX BertNER (sliding windows + cross-window merging +
+gender augmentation), but a System One gateway model replaces all
+local BERT inference, and a two-stage "token detection + span typing"
+design replaces BertNER fixed n-gram candidates so any language works:
 
-1. 检测阶段：随包 Qwen3 分词器把窗口切为词元序列，每个词元作为
-   一个 Noul 问题（"该词元是否为命名实体组成部分"）批量提交，
-   jev 并行回答；对应 BertNER 底座模型的 token 级预测，语言无关，
-   不受固定 n-gram 长度假设的约束；
-2. 分型阶段：连续命中词元重组为实体区间，区间内生成全部连续子
-   span（含嵌套），每个子 span 作为一个 Choice 问题（标签为启用
-   实体类型 + NONE）批量提交，jev 并行分型；嵌套实体（如
-   "中华人民共和国外交部"内的"中华人民共和国"）天然被覆盖；
-3. 跨窗口合并：同类型包含吸收（概率最高者优先，清理窗口碎片），
-   不同类型的包含关系是嵌套实体，两侧都保留；
-4. PERSON 实体按文本去重后批量做性别判定（Choice：
-   MALE/FEMALE/UNKNOWN），结果写入进程内 LRU 缓存避免重复请求。
+1. Detection: the bundled Qwen3 tokenizer splits each window into a
+   token sequence; every token becomes one Noul question ("is this
+   token part of a named entity?") submitted in batches and answered
+   in parallel. This mirrors the base model token-level prediction in
+   BertNER, is language-agnostic, and is free of fixed n-gram length
+   assumptions.
+2. Typing: contiguous hit tokens reassemble into entity regions; every
+   contiguous sub-span within a region (nesting included) becomes one
+   Choice question (labels = enabled entity types + NONE) submitted in
+   batches. Nested entities are covered naturally.
+3. Cross-window merging: repeated recognitions at the same occurrence
+   (identical start/end) merge into one, taking the union of types and
+   the max probability per type; both sides of a nested pair survive,
+   and the relation is derived downstream by entity_tree() from offset
+   containment.
+4. PERSON entities are deduplicated by text and batch-judged for
+   gender (Choice: MALE/FEMALE/UNKNOWN), with results written to an
+   in-process LRU cache to avoid duplicate requests.
 
-调用方与维护者进入本文件时最需要先知道：
-- 本类不加载任何本地神经网络权重，唯一外部依赖是 TypeSafe API；
-- Choice 的 probabilities 是跨选项归一化的竞争分布，NONE 的概率
-  天然承担"非实体"置信度，prob_threshold 过滤基于被选中类型
-  自身的概率；
-- 检测与分型问题分别按各自批次大小打包，
-  保证单个请求不超过 jev 的 per-request 上下文限制。
+What callers and maintainers need to know first:
+- This class loads no local neural weights; the only external
+  dependency is the gateway API.
+- Choice probabilities are a competitive distribution normalized
+  across options, so NONE probability naturally carries the
+  "not an entity" confidence, and prob_threshold filters on the
+  selected type own probability.
+- Detection and typing questions are batched by their own sizes so a
+  single request never exceeds the gateway request-body and
+  total-option hard limits.
 """
 
 from __future__ import annotations
@@ -58,165 +68,195 @@ from jevner.tokenizer import BundledTokenizer, strip_span
 logger = logging.getLogger("jevner")
 
 DEFAULT_MODEL = "baseten/mammoth-1"
-"""默认模型：BaseTen 托管的 Mammoth 1（经同一 System One 网关路由）。
+"""Default model: Mammoth 1 hosted on BaseTen (routed through the same
+System One gateway).
 
-网关上与 jev 系列走完全相同的 system_one 协议（Noul/Choice），
-仅 model 字段不同；实测 NER 管线协议兼容、识别质量相当。
+Uses exactly the same system_one protocol (Noul/Choice) as the jev
+family on the gateway; only the model field differs. Verified
+protocol-compatible on the NER pipeline with comparable quality.
 """
 
 LONG_CONTEXT_HEADER = {"TypeSafe-Danger-Zone-Long-Context": "true"}
-"""jev 长上下文请求头。
+"""Long-context request header for jev-family models.
 
-携带该头的请求 per-request 与 per-question 上下文均提升至 262k
-token；不携带时默认 64k/32k。分型 state 含完整类型表，超长窗口
-（64k 以上）依赖该头；常规窗口下它只作保险，无副作用。
+Requests carrying this header get both per-request and per-question
+contexts raised to 262k tokens (defaults: 64k/32k). Typing states
+embed the full type table, so extra-long windows (64k+) depend on
+it; for ordinary windows it is a no-op safety net.
 """
 
 REQUEST_MAX_BYTES = 65_535
-"""单个 system_one 请求体（prompt）的字节硬上限（服务端限制）。
+"""Hard cap on a single system_one request body (server-side limit).
 
-请求体 = state JSON + 全部问题 JSON。超限请求被服务端拒绝
-（实测 500/网关熔断），且难以从报错定位——因此在设计上保证
-任意请求不超：窗口按字节预算切分（REQUEST_STATE_BUDGET），
-分型 criteria 只携带标签不携带描述（描述仅在 state 类型表出现一次）。
+The request body = state JSON + all question JSON. Oversized
+requests are rejected by the server (observed as 500s / gateway
+melt-downs) and the error never points at the cause — so the design
+guarantees no request ever exceeds it: windows are cut from a byte
+budget (REQUEST_STATE_BUDGET), and typing criteria carry labels only
+(descriptions appear once, in the state type table).
 """
 
 BYTES_PER_TOKEN_WORST = 4
-"""按 UTF-8 最坏情况估算的每 token 字节数。
+"""Worst-case UTF-8 bytes per token.
 
-中文一字一 token 约 3 字节，英文子词平均约 4 字节，取 4 为
-统一安全上界，用于把窗口字节预算换算为 token 窗口大小。
+Chinese costs roughly 3 bytes per token (one token per character);
+English subwords average about 4. Use 4 as the uniform safe upper
+bound when converting the window byte budget into token window size.
 """
 
 REQUEST_STATE_BUDGET = 48_000
-"""窗口文本在请求体中的字节预算。
+"""Byte budget for the window text inside a request body.
 
-请求体 65,535 字节减去分型类型表（约 2KB）、问题批次（每问
-约 150~250 字节 × 批次 64 ≈ 16KB）与 JSON 结构开销后，留给
-窗口文本的安全预算。检测与分型共用同一窗口，按两者中更紧的
-分型预算取值。
+Out of the 65,535-byte body: subtract the typing type table (~2KB),
+the question batch (~150-250 bytes per question at up to 64 per
+batch, about 16KB), and JSON structural overhead. Detection and
+typing share the same window, so the budget follows the tighter of
+the two (typing).
 """
 
 DEFAULT_WINDOW_SIZE = REQUEST_STATE_BUDGET // BYTES_PER_TOKEN_WORST
-"""默认滑动窗口大小（token 数）：字节预算 ÷ 最坏字节/token = 12k。
+"""Default sliding-window size in tokens: byte budget / worst-case
+bytes-per-token = 12k.
 
-窗口同时受两种上限约束，取更紧者：
-- 请求体字节数 ≤ 65,535（硬限制，见 REQUEST_MAX_BYTES）：中文
-  UTF-8 每字 3 字节、英文每 token 约 4 字节，12k token 窗口
-  最坏 48KB 文本 + 批次问题与结构开销，仍在预算内；
-- jev per-question 上下文 32k token：12k 窗口留足余量。
+The window follows the tighter of two caps:
+- Request body <= 65,535 bytes (hard limit, see REQUEST_MAX_BYTES):
+  Chinese UTF-8 costs 3 bytes per character and English about 4
+  bytes per token, so a 12k-token window stays within budget even at
+  48KB of text plus batch questions and structural overhead;
+- jev per-question context of 32k tokens: 12k leaves ample headroom.
 
-超长文本（如百万级 token）由滑动窗口 + 窗口级并行处理：
-每窗 12k token、相邻 50% 重叠，窗口间在线程池上并发提交。
+Very long documents (millions of tokens) are handled by sliding
+windows + window-level parallelism: 12k tokens per window, 50%
+adjacent overlap, windows submitted concurrently on a thread pool.
 """
 
 DEFAULT_STRIDE_DIVISOR = 2
-"""默认滑动步长因子：stride = window_size // 2（50% 重叠）。
+"""Default stride factor: stride = window_size // 2 (50% overlap).
 
-词元级检测对窗口边界不敏感（重叠窗口保证跨边界实体至少单侧完整），
-50% 重叠即可，比 BertNER 的 25% 步长节省一半请求。
+Token-level detection is insensitive to window boundaries
+(overlapping windows guarantee a boundary-crossing entity is fully
+visible on at least one side), so 50% overlap suffices — half the
+requests of the BertNER 25% step.
 """
 
 DEFAULT_MAX_WORKERS = 8
-"""窗口级并行的默认线程数。
+"""Default thread count for window-level parallelism.
 
-瓶颈在 TypeSafe API 的网络往返与限流而非本地 CPU，8 路并发
-可在限流内显著压缩多窗口延迟；0 或 1 时退化为串行。
+The bottleneck is gateway round-trips and rate limiting, not local
+CPU; 8-way concurrency compresses multi-window latency within the
+rate limits. 0 or 1 degrades to sequential execution.
 """
 
 DETECT_CACHE_CAPACITY = 128
-"""检测结果的进程内 LRU 缓存容量（按窗口文本哈希键控）。"""
+"""In-process LRU capacity for detection results (keyed by window
+hash)."""
 
 TYPING_CACHE_CAPACITY = 4096
-"""分型结果的进程内 LRU 缓存容量（按窗口哈希 + span 键控）。"""
+"""In-process LRU capacity for typing results (keyed by window hash +
+span)."""
 
 DEFAULT_PROB_THRESHOLD = 0.5
-"""实体主类型（最相关类型）概率的默认过滤阈值。"""
+"""Default probability floor for an entity primary (most relevant)
+type."""
 
 SECONDARY_TYPE_THRESHOLD = 0.25
-"""实体次要类型的概率下限。
+"""Probability floor for secondary entity types.
 
-Choice 的 probabilities 是跨选项的竞争分布；主类型（被选项）必须过
-prob_threshold，其余类型达到该下限即作为次要类型一并返回，与主
-类型一起按概率降序排列——一个实体可以同时具有多种类型（如一个
-国家既是政区 GPE 又是地点 LOC），按相关性排序而不强制单一类型。
-0.25 起步：实测大批次下碎片 span 的次要类型概率常在 0.1~0.2，
-抬高下限避免噪声类型混入。"""
+Choice probabilities are a competitive distribution across options;
+the primary type (the selected option) must pass prob_threshold, and
+other types at or above this floor ride along as secondary types,
+all ranked by probability — one entity can hold several types at
+once (a country is both GPE and LOC) without forcing a single one.
+0.25 empirically: fragment spans in large batches show secondary
+probabilities of 0.1-0.2, and the raised floor keeps noise types out."""
 
 REQUEST_MAX_OPTIONS = 512
-"""单请求的选项总数上限（网关后端校验，超限返回 422）。
+"""Cap on total options per request (enforced by the gateway backend;
+exceeding it returns 422).
 
-Choice 问题每问的选项数 = 启用类型数 + NONE，分型批的每批问题数
-按 512 ÷ 每问选项数 动态计算（如 CORE 20 选项 → 每批 25 问），
-保证任意 taxonomy（含自定义多类型）下请求都不超限。"""
+A Choice question carries (enabled types + NONE) options, so the
+per-batch question count is computed as 512 / options per question
+(e.g. CORE 20 options -> 25 questions per batch), keeping every
+request within the limit under any taxonomy (custom multi-type
+included)."""
 
 TYPING_BATCH_SIZE = 64
-"""分型阶段单请求问题数的上限（再受选项预算动态收窄）。
+"""Upper bound on typing questions per request (further narrowed by
+the option budget).
 
-分型需要精细语义判定，实测大批次会稀释模型对碎片 span 的 NONE
-判定（批内问题互相干扰），小批次显著更稳。"""
+Typing demands fine semantic judgment; large batches dilute the
+model NONE verdicts on fragment spans (in-batch interference), so
+small batches are markedly more stable."""
 
 DETECT_BATCH_SIZE = 64
-"""检测阶段单请求问题数。
+"""Detection questions per request.
 
-与分型批对齐：检测同样受批内干扰影响，实测 256 大批下中文双字
-地名（"福建/福州"）的 Noul 值被稀释而漏检，64 批稳定。"""
+Aligned with the typing batch: detection suffers the same in-batch
+interference — at 256 per batch, two-character Chinese place names
+had their Noul scores diluted into misses, while 64 stays stable."""
 
 DETECT_PROB_THRESHOLD = 0.25
-"""词元检测 Noul 的判定阈值。
+"""Noul decision threshold for token detection.
 
-检测阶段宁滥勿缺：碎片/伪 span 由分型阶段的 NONE 一票否决
-（含 prob_threshold 主阈值）在源头过滤，检测层放宽只增加候选
-span 数量、不引入伪实体。实测中文高频单字（"二甲双胍"的"二"
-等数字词）单轮检测分数可低至 0.3，阈值过高会整词漏检。"""
+Detection prefers recall over precision: fragments and pseudo-spans
+are rejected at the source by the typing stage NONE veto (plus the
+prob_threshold primary floor), so a loose detection layer only adds
+candidate spans — never fake entities. Empirically, frequent Chinese
+single characters (digits inside drug names) can score as low as 0.3
+in one round; a high threshold drops whole words."""
 
 DETECT_GAP_TOLERANCE = 2
-"""区间重组允许的漏检词元数。
+"""Missed-token tolerance during region reassembly.
 
-细碎分词语言（泰文、阿拉伯文等）中，声调符号、词缀等单字符词元
-常被检测阶段单独判否；容差允许桥接少量漏检词元，避免实体区间
-因个别碎片漏检而断链。桥接进来的非实体片段由分型阶段的 NONE
-兜底过滤。
+In finely segmented scripts (Thai, Arabic), single-character tokens
+such as tone marks and affixes are often individually voted down;
+the tolerance bridges a few missed tokens so entity regions do not
+break apart. Bridged non-entity fragments are filtered by the
+typing stage NONE veto.
 """
 
 DETECT_RECHECK_LOW = 0.15
-"""词元检测复检的灰色区下界。
+"""Lower bound of the detection recheck gray zone.
 
-Noul 值落在 [DETECT_RECHECK_LOW, 0.5) 的词元进入复检队列，
-做三轮独立复检取最大值——真实 API 逐请求存在采样方差，实测
-中文医药词元（如"二甲双胍"的"二/甲/双/胍"）单轮检测概率可低至
-0.2~0.4，单轮 + 低阈值会整词漏检，三轮取最大显著压低漏检率。
+Tokens scoring in [DETECT_RECHECK_LOW, 0.5) enter the recheck queue
+for three independent rounds, keeping the maximum — the live API
+has per-request sampling variance, and Chinese medical tokens can
+score 0.2-0.4 in a single round. Max-of-three sharply cuts misses.
 """
 
 DETECT_RECHECK_ROUNDS = 3
-"""灰色区词元复检轮数（含首轮共 1 + 3 轮采样，取最大值）。"""
+"""Recheck rounds for gray-zone tokens (1 first pass + 3 samples,
+take the maximum)."""
 
 MAX_ENTITY_TOKENS = 12
-"""实体区间内子 span 的最大词元长度。
+"""Maximum token length of a sub-span inside an entity region.
 
-超过此长度的命名实体极罕见；子 span 长度以此截断。
+Named entities longer than this are extremely rare; sub-span length
+is truncated here.
 """
 
 GENDER_BATCH_SIZE = 256
-"""性别判定单请求问题数（性别问题极小，大批次无批内干扰问题）。"""
+"""Gender questions per request (tiny payloads; no in-batch
+interference)."""
 
 GENDER_CACHE_CAPACITY = 1024
-"""性别判定结果的进程内 LRU 缓存容量。"""
+"""In-process LRU capacity for gender results."""
 
 GENDER_CRITERIA: dict[str, str] = {
     "MALE": "A name conventionally borne by men.",
     "FEMALE": "A name conventionally borne by women.",
     "UNKNOWN": "No clear gender signal, or a name commonly used for any gender.",
 }
-"""性别判定 Choice 问题的选项描述。"""
+"""Option descriptions for the gender Choice questions."""
 
 
 class _Cache(Protocol):
-    """vortezwohl LRUCache 的类型化协议视图。
+    """A typed protocol view over vortezwohl LRUCache.
 
-    vortezwohl 未随包发布类型标注，此处以结构化协议约束本 SDK 实际
-    依赖的两个方法，保证 jevner 侧的类型安全。键值均为 Any，由
-    各调用点自行收窄。
+    vortezwohl ships no type annotations; this structural protocol
+    pins the two methods this SDK actually depends on, keeping the
+    jevner side type-safe. Keys and values are Any; call sites narrow
+    them.
     """
 
     def read(self, key: object) -> object | None: ...
@@ -225,10 +265,11 @@ class _Cache(Protocol):
 
 
 class JevNER:
-    """基于 jev 的滑动窗口多语言命名实体识别器。
+    """A sliding-window multilingual entity recognizer over gateway models.
 
-    用法与 BertNER 对齐：构造一次，反复调用实例。凭据默认从环境
-    变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL 读取，也可显式传入。
+    Usage mirrors BertNER: construct once, call repeatedly.
+    Credentials default to the TYPESAFE_API_KEY / TYPESAFE_BASE_URL
+    environment variables and may also be passed explicitly.
     """
 
     def __init__(
@@ -242,31 +283,34 @@ class JevNER:
         max_workers: int = DEFAULT_MAX_WORKERS,
         taxonomy: EntityTaxonomy | None = None,
     ) -> None:
-        """初始化识别器。
+        """Initialize the recognizer.
 
         Args:
-            model_name: 网关模型名，默认 'baseten/mammoth-1'
-                （BaseTen 托管的 Mammoth 1；也可传 'jev-latest' 等
-                网关注册的其他模型）。
-            api_key: TypeSafe API Key，缺省时读取 TYPESAFE_API_KEY 环境变量。
-            base_url: API 根地址，缺省时读取 TYPESAFE_BASE_URL 环境变量。
-            timeout: 单请求超时秒数，缺省时使用 SDK 默认值。
-            window_size: 滑动窗口大小（token 数），默认 24k
-                （jev per-question 32k 减余量）。
-            max_workers: 窗口级并行的线程数；0 或 1 时退化为串行。
-            taxonomy: 实体类型体系（类型/包注册表与默认包），
-                None 时用内置体系；C 端用户可传
-                EntityTaxonomy.from_json(...) 的构建结果。
+            model_name: Gateway model name; defaults to
+                'baseten/mammoth-1' (Mammoth 1 on BaseTen; any model
+                registered on the gateway works, e.g. 'jev-latest').
+            api_key: Gateway API key; falls back to the
+                TYPESAFE_API_KEY environment variable.
+            base_url: API root; falls back to TYPESAFE_BASE_URL.
+            timeout: Per-request timeout in seconds; SDK default when
+                None.
+            window_size: Sliding-window size in tokens (default 12k,
+                derived from the request-body byte budget).
+            max_workers: Window-level concurrency; 0 or 1 runs
+                sequentially.
+            taxonomy: Entity type system (type/pack registries and
+                default packs); None uses the built-in system. Consumer
+                users can pass EntityTaxonomy.from_json(...) results.
 
         Raises:
-            ValueError: window_size 非正。
-            TypeSafeError: API Key 缺失或非法。
+            ValueError: window_size is not positive.
+            TypeSafeError: The API key is missing or invalid.
         """
         if window_size < 1:
             raise ValueError(f"window_size ({window_size}) must be positive.")
-        # 重试策略：对 408/429/5xx 与连接类错误做 3 次指数退避重试
-        # （默认 RetryPolicy 总预算 30s 过短，实测服务端瞬态 500/520
-        # 会被过早放弃），总预算放开由 max_retries 封顶
+        # Retry: 3 exponential-backoff attempts on 408/429/5xx and connection errors
+        # (the default 30s total budget is too short — transient 500/520s
+        # get abandoned early); uncapped, bounded by max_retries
         self._client = TypeSafeClient(
             api_key=api_key,
             base_url=base_url,
@@ -276,16 +320,16 @@ class JevNER:
         )
         self._tokenizer = BundledTokenizer()
         self._window_size = window_size
-        # 实体类型体系：类型/包注册表与默认包，识别管线全部类型
-        # 语义的唯一来源；用户可经 JSON 扩展或覆盖
+        # Entity type system: type/pack registries + default packs, the single
+        # source of type semantics; users extend or override via JSON
         self._taxonomy = taxonomy if taxonomy is not None else DEFAULT_TAXONOMY
-        # 窗口级并行线程池：多窗口（超长文本）并发提交检测与分型请求。
-        # 线程安全性：httpx2.Client 底层为连接池，多线程共享安全。
+        # Window-level thread pool: windows (long documents) submit detection and
+        # typing requests concurrently. Thread safety: httpx2.Client pools connections.
         self._max_workers = max(1, max_workers)
         self._pool = ThreadPool(max_workers=self._max_workers)
-        # 三级进程内 LRU 缓存：检测（窗口 → 命中词元）、分型
-        # （窗口 + span → 类型元组）、性别（人名 → 性别判定）。
-        # 重复文本 / 重叠窗口 / 重复人名全部命中缓存，免于重复请求。
+        # Three in-process LRU caches: detection (window -> hit tokens), typing
+        # (window + span -> type tuples), gender (name -> judgment).
+        # Repeated text / overlapping windows / repeated names all hit cache.
         self._detect_cache: _Cache = LRUCache(capacity=DETECT_CACHE_CAPACITY)
         self._typing_cache: _Cache = LRUCache(capacity=TYPING_CACHE_CAPACITY)
         self._gender_cache: _Cache = LRUCache(capacity=GENDER_CACHE_CAPACITY)
@@ -299,20 +343,23 @@ class JevNER:
     def _detect_regions(
         self, window_text: str, tokens: list[tuple[int, int, str]]
     ) -> tuple[list[tuple[int, int, str]], list[int], list[list[tuple[int, int, str]]]]:
-        """在单个窗口内检测实体词元区间。
+        """Detect entity token regions within one window.
 
-        逐词元提交 Noul 问题（"该词元是否为命名实体组成部分"），按
-        阈值筛出命中词元并按位置严格连续性重组为区间。对应 BertNER
-        底座模型的 token 级预测，对任意语言的分词形态一视同仁。
-        结果按窗口文本哈希写入进程内 LRU 缓存，重复窗口零请求。
+        Submits one Noul question per token ("is this token part of a
+        named entity?"), filters hits by threshold, and reassembles
+        them into regions by positional adjacency. This mirrors the
+        token-level prediction of the BertNER base model and treats
+        every tokenization shape alike. Results are cached in-process
+        by window-text hash; repeated windows cost zero requests.
 
         Args:
-            window_text: 窗口文本（原文的精确子串，渲染 state 用）。
-            tokens: 窗口词元列表，偏移锚定在原文上。
+            window_text: The window text (an exact source substring;
+                used to render the state).
+            tokens: Window tokens with offsets anchored to the source.
 
         Returns:
-            (窗口全部词元, 命中词元索引, 严格连续区间) 三元组；
-            词元为 (start, end, text)，start/end 为原文全局字符偏移。
+            (all window tokens, hit token indices, strict contiguous
+            regions); tokens carry source-global character offsets.
         """
         if not tokens:
             return [], [], []
@@ -324,10 +371,10 @@ class JevNER:
                 cached,
             )
         state = render_detection_state(window_text)
-        # 逐词元 Noul 概率；对灰色区（DETECT_RECHECK_LOW..HIGH）的
-        # 不确定词元做第二轮复检，两轮任一过阈值即命中——真实
-        # API 逐请求存在采样方差，实测同一 state 多轮极稳定，
-        # 复检显著降低词元级漏检率（尤其孤立短词元如"北京"）。
+        # Per-token Noul scores; gray-zone tokens (DETECT_RECHECK_LOW..HIGH)
+        # get a second recheck round; passing the threshold in either round counts
+        # (the live API has per-request sampling variance; the same state is
+        # stable across rounds, and rechecks cut token misses sharply).
         scores: dict[int, float] = {}
         recheck: list[int] = []
         indexed: list[tuple[int, tuple[int, int, str]]] = list(enumerate(tokens))
@@ -335,9 +382,9 @@ class JevNER:
             pairs = [p for p in raw_batch if p is not None]
             if not pairs:
                 continue
-            # 每个词元问题携带左右邻近词元：孤立单字/碎片是否属于
-            # 实体高度依赖上下文（"吴"单看无法判定，左邻右邻
-            # "子"才成立），邻近词元让检测阶段具备区间视野。
+            # Each token question carries its neighbors: whether an isolated single
+            # character belongs to an entity is context-dependent ("吴" alone is
+            # undecidable; with neighbors it is), giving detection region vision.
             questions: dict[str, Noul] = {
                 f"tok_{i}": Noul(
                     instructions={
@@ -360,7 +407,7 @@ class JevNER:
                 scores[i] = float(answer.noul)
                 if DETECT_RECHECK_LOW <= scores[i] < DETECT_PROB_THRESHOLD:
                     recheck.append(i)
-        # 灰色区词元多轮复检（DETect_RECHECK_ROUNDS 轮独立采样取最大值）
+        # Gray-zone multiround recheck (DETECT_RECHECK_ROUNDS independent samples, keep max)
         for _ in range(DETECT_RECHECK_ROUNDS):
             pending = [
                 i
@@ -393,9 +440,9 @@ class JevNER:
                         continue
                     scores[i] = max(scores[i], float(answer.noul))
         hits = sorted(i for i, score in scores.items() if score >= DETECT_PROB_THRESHOLD)
-        # 命中词元按位置严格连续性重组为区间（双策略之一）。
-        # 严格连续保证相邻实体不互相粘连："在北京"与"耿爽"各自
-        # 独立成区间，"北京"不会被吞进粘介词 span。
+        # Reassemble hits into strictly contiguous regions (strategy 1 of 2).
+        # Strict contiguity keeps adjacent entities from gluing together:
+        # each becomes its own region, no swallowed preposition spans.
         regions: list[list[tuple[int, int, str]]] = []
         current: list[tuple[int, int, str]] = []
         prev: int | None = None
@@ -420,22 +467,24 @@ class JevNER:
         hits: list[int],
         regions: list[list[tuple[int, int, str]]],
     ) -> list[list[tuple[int, int, str]]]:
-        """对命中词元做容差桥接，得到第二套区间（双策略之二）。
+        """Bridge hit tokens with gap tolerance into a second region set.
 
-        严格连续区间会把细碎分词语言（泰文、阿拉伯文）中被检测
-        判否的声调符号、词缀切出词外，导致词内实体断成碎片。桥接
-        区间允许跳过漏检词元（DETECT_GAP_TOLERANCE 内）把命中词元
-        连成更长区间，跨过的漏检词元字符一并并入。两套区间并集
-        交给分型阶段：严格区间保边界，桥接区间保词内完整实体，
-        粘连产生的垃圾 span 由分型阶段的 NONE 兜底过滤。
+        Strict contiguity slices intra-word tokens out of finely
+        segmented scripts (Thai, Arabic), where tone marks and affixes
+        are individually voted down, breaking word-internal entities
+        into fragments. Bridged regions tolerate a few missed tokens
+        (DETECT_GAP_TOLERANCE) and merge the crossed tokens' character
+        ranges in. The two region sets union in the typing stage:
+        strict regions keep boundaries, bridged regions keep
+        word-internal entities whole, and glued junk spans are
+        filtered out by the typing NONE veto.
 
         Args:
-            tokens: 窗口全部词元。
-            hits: 命中词元的索引列表（升序）。
-            regions: 严格连续区间列表。
+            tokens: All window tokens.
+            hits: Hit token indices (ascending).
 
         Returns:
-            桥接区间列表；与严格区间一起构成双策略并集。
+            Bridged regions; unioned with the strict regions.
         """
         bridged: list[list[tuple[int, int, str]]] = []
         current: list[tuple[int, int, str]] = []
@@ -443,12 +492,12 @@ class JevNER:
         for i in hits:
             missed = i - last_hit - 1 if last_hit is not None else 0
             if current and last_hit is not None and missed <= DETECT_GAP_TOLERANCE:
-                # 连续（missed == 0）延长区间；漏检在容差内则把
-                # 漏检词元一并桥接进区间
+                # Contiguous (missed == 0) extends the region; misses within tolerance
+                # bridge the missed tokens into the region
                 current.extend(tokens[last_hit + 1 : i])
                 current.append(tokens[i])
             else:
-                # 漏检超出容差：落盘当前区间并另起新区间
+                # Misses beyond tolerance: flush the current region and start a new one
                 if current:
                     bridged.append(current)
                 current = [tokens[i]]
@@ -464,26 +513,29 @@ class JevNER:
         entity_types: tuple[EntityType, ...],
         prob_threshold: float,
     ) -> list[Entity]:
-        """在单个窗口内完成检测与分型，返回实体列表。
+        """Run detection and typing for one window; returns its entities.
 
-        检测产出双策略区间（严格连续 + 容差桥接）的并集，每区间内
-        生成全部连续子 span（长度至多 MAX_ENTITY_TOKENS 个词元），
-        子 span 之间天然包含嵌套（如"中华人民共和国外交部"内的
-        "中华人民共和国"），全部作为 Choice 问题批量提交 jev 分型。
+        Detection yields the union of two region strategies (strict
+        contiguity + gap bridging); every contiguous sub-span within
+        each region (at most MAX_ENTITY_TOKENS tokens long, nesting
+        included) becomes one Choice question batched for typing.
 
-        分型支持多类型：Choice 的 probabilities 是跨选项竞争分布，
-        被选项作为主类型必须过 prob_threshold，其余类型概率达到
-        SECONDARY_TYPE_THRESHOLD 即作为次要类型一并保留，与主类型
-        一起按概率降序排列——不强制一个实体只有一种类型。
+        Typing supports multiple types: Choice probabilities are a
+        competitive distribution; the selected option must clear
+        prob_threshold as the primary type, and remaining types at or
+        above SECONDARY_TYPE_THRESHOLD ride along, all ranked by
+        probability — a single type is never forced.
 
         Args:
-            window_text: 窗口文本（原文的精确子串，渲染 state 用）。
-            tokens: 窗口词元列表，偏移锚定在原文上。
-            entity_types: 本次识别启用的实体类型集合。
-            prob_threshold: 主类型概率过滤阈值。
+            window_text: The window text (an exact source substring;
+                used to render the state).
+            tokens: Window tokens with offsets anchored to the source.
+            entity_types: The enabled entity types for this pass.
+            prob_threshold: Primary-type probability floor.
 
         Returns:
-            该窗口内识别出的实体列表（未跨窗口合并），偏移锚定原文。
+            Entities recognized in this window (not yet merged across
+            windows), offsets anchored to the source.
         """
         _, hits, strict_regions = self._detect_regions(window_text, tokens)
         all_regions: list[list[tuple[int, int, str]]] = list(strict_regions)
@@ -492,8 +544,8 @@ class JevNER:
                 all_regions.append(region)
         if not all_regions:
             return []
-        # 区间内生成全部连续子 span；偏移剥离首尾标点后同步修正，
-        # 保证 span 文本始终是原文的精确子串（嵌套关联的锚点）
+        # Generate every contiguous sub-span in each region; edge punctuation
+        # stripping moves offsets with it so span text stays an exact substring
         spans: list[tuple[str, int, int]] = []
         seen: set[tuple[str, int, int]] = set()
         for region in all_regions:
@@ -504,7 +556,7 @@ class JevNER:
                     raw_end = region[i + length - 1][1]
                     text, start, end = strip_span(window_text, raw_start, raw_end)
                     key = text.strip()
-                    # 跳过空白、重复、以及完全不含字母数字的纯标点候选
+                    # Skip blank, duplicate, or punctuation-only candidates
                     if not key or (text, start, end) in seen:
                         continue
                     if not any(ch.isalnum() for ch in key):
@@ -513,7 +565,7 @@ class JevNER:
                     spans.append((text, start, end))
         if not spans:
             return []
-        # 分型缓存命中：跳过已判定过的 span（重叠窗口 / 重复文本复用）
+        # Typing cache hits: skip spans already judged (window overlap / repeats)
         window_hash = hashlib.sha256(window_text.encode("utf-8")).hexdigest()
         uncached: list[tuple[int, str]] = []
         cached_entities: dict[int, tuple[tuple[EntityType, float], ...]] = {}
@@ -526,18 +578,19 @@ class JevNER:
                 uncached.append((i, text))
         entities: list[Entity] = []
         state = render_typing_state(window_text, entity_types)
-        # criteria 只携带标签不携带描述：类型描述已在 state 的
-        # ENTITY_TYPES 表中出现一次（每问重复描述会把单问题从约
-        # 150 字节膨胀到约 2KB，64 问一批即约 128KB，超过服务端
-        # 65,535 字节请求体硬上限——实测 [3] 稳定 500 即此原因）。
-        # 标签命名与类型表键一致，模型按键查表语义判定。
+        # Criteria carry labels only: descriptions already appear once in the
+        # state ENTITY_TYPES table (repeating them per question balloons a
+        # question from ~150 bytes to ~2KB; 64 per batch ~= 128KB, past the
+        # 65,535-byte hard cap — the observed stable 500s came from exactly this).
+        # Labels match the type-table keys; the model resolves them by lookup.
         criteria: dict[str, str | None] = {t.label: None for t in entity_types}
         criteria[NONE_LABEL] = None
 
         def _type_batch(
             pairs: list[tuple[int, str]],
         ) -> dict[int, tuple[tuple[EntityType, float], ...]]:
-            """单批分型请求：返回 span 索引到降序类型元组的映射，空元组表示 NONE。"""
+            """One typing batch request: map span index -> ranked type tuple;
+            an empty tuple means NONE."""
             questions: dict[str, Choice] = {
                 f"type_{i}": Choice(instructions={"SPAN": cand}, criteria=criteria)
                 for i, cand in pairs
@@ -552,15 +605,15 @@ class JevNER:
                     logger.warning("JevNER got no typing answer for type_%d, skipped.", i)
                     batch[i] = ()
                     continue
-                # NONE 一票否决：jev 判定该 span 不是实体时，
-                # 不再收集任何次要类型——否则碎片 span 会借
-                # 低概率次要类型绕过否决混入结果（实测 0.25~0.5
-                # 的碎片噪声即从该路径漏入）
+                # NONE veto: when the model judges a span a non-entity,
+                # no secondary types are collected — otherwise fragments slip in
+                # through low-probability secondary types bypassing the veto
+                # (observed with 0.25-0.5 fragment noise)
                 if answer.choice == NONE_LABEL:
                     batch[i] = ()
                     continue
-                # 主类型（被选项）必须过 prob_threshold；
-                # 其余类型过 SECONDARY_TYPE_THRESHOLD 即为次要类型
+                # The primary type (selected option) must clear prob_threshold;
+                # others at or above SECONDARY_TYPE_THRESHOLD ride along as secondary
                 best_per_type: dict[EntityType, float] = {}
                 primary_prob = float(answer.probabilities.get(answer.choice, 0.0))
                 if primary_prob < prob_threshold:
@@ -569,7 +622,7 @@ class JevNER:
                 primary = self._taxonomy._type_of(answer.choice)
                 best_per_type[primary] = primary_prob
                 for label, prob in answer.probabilities.items():
-                    # NONE 是否决选项不是实体类型，不进类型收集
+                    # NONE is the veto option, not an entity type; excluded from collection
                     if label == NONE_LABEL or label == answer.choice:
                         continue
                     if prob < SECONDARY_TYPE_THRESHOLD:
@@ -580,11 +633,11 @@ class JevNER:
                 batch[i] = tuple(sorted(best_per_type.items(), key=lambda kv: -kv[1]))
             return batch
 
-        # 分型批次并行提交；批大小按选项预算动态收窄：
-        # 每问选项数 = 类型数 + 1（NONE），每批问题数 ≤
-        # REQUEST_MAX_OPTIONS ÷ 每问选项数，且不超过 TYPING_BATCH_SIZE
-        # （网关后端对单请求选项总数有 512 上限，超限 422）。
-        # batched() 以 fill_value=None 补齐尾批，需过滤 None 元素。
+        # Typing batches run in parallel; batch size narrows by option budget:
+        # options per question = types + 1 (NONE), questions per batch <=
+        # REQUEST_MAX_OPTIONS / options per question, capped by TYPING_BATCH_SIZE
+        # (the gateway caps total options per request at 512; 422 beyond).
+        # batched() pads the last batch with None; filter them out.
         options_per_question = len(entity_types) + 1
         batch_limit = min(TYPING_BATCH_SIZE, REQUEST_MAX_OPTIONS // options_per_question)
         batches = [
@@ -595,8 +648,8 @@ class JevNER:
         if len(batches) <= 1 or self._max_workers <= 1:
             batch_results = [_type_batch(pairs) for pairs in batches]
         else:
-            # ThreadPool.map 会对 Iterable 参数做 *param 解包，这里
-            # 用单元素 tuple 包装，使 _type_batch 收到完整的批次列表
+            # ThreadPool.map unpacks Iterable params with *param, so wrap each
+            # batch in a 1-tuple to hand _type_batch the full list
             batch_results = []
             for result in self._pool.map(_type_batch, [(list(b),) for b in batches]):
                 if result.error is not None:
@@ -611,7 +664,7 @@ class JevNER:
         for pairs, result in zip(batches, batch_results, strict=True):
             for i, text in pairs:
                 self._typing_cache.write((window_hash, text, prob_threshold), result.get(i, ()))
-        # 汇总：缓存命中 + 本轮判定，NONE（空元组）不产出实体
+        # Combine: cache hits + this round; NONE (empty tuple) yields no entity
         all_ranked: dict[int, tuple[tuple[EntityType, float], ...]] = dict(cached_entities)
         for result in batch_results:
             all_ranked.update(result)
@@ -622,32 +675,36 @@ class JevNER:
         return entities
 
     def _combine(self, entities: list[Entity], deduplicate: bool) -> list[Entity]:
-        """跨窗口实体合并（按出现位置去重与类型并集）。
+        """Merge entities across windows (per-occurrence dedup + type union).
 
-        规则：
+        Rules:
 
-        - 同一出现位置（start/end 相同）：跨窗口/跨批次重复识别的同
-          一实体，合并为一个，多类型取并集，同类型取最高概率；
-        - 不同出现位置：各自独立保留——含包含关系的实体是嵌套实体
-          （如 GPE"福建"[16:18] 内嵌于 GPE"福建福州"[16:20]），合并
-          阶段不做任何吸收或吞并，嵌套关联完全交由输出侧
-          entity_tree() 依据偏移包含关系派生。
+        - Same occurrence (identical start/end): repeated recognitions
+          from overlapping windows or batches merge into one entity,
+          taking the union of types and the max probability per type;
+        - Different occurrences: kept independently — spans in a
+          containment relation are nested entities (e.g. GPE "福建"
+          [16:18] inside GPE "福建福州" [16:20]); the merge stage never
+          absorbs or drops either side, and relations are derived
+          entirely downstream by entity_tree() from offset containment.
 
-        碎片噪声（检测方差产生的 PERSON"吴"之类）不在合并阶段拦截——
-        由分型阶段的 NONE 一票否决在源头过滤。
+        Fragment noise (detection-variance artifacts like PERSON "吴")
+        is not intercepted here — the typing stage NONE veto filters
+        it at the source.
 
         Args:
-            entities: 全部窗口的实体平铺列表。
-            deduplicate: 是否对同位置重复实体做去重合并（类型并集）。
+            entities: Flat entity list from all windows.
+            deduplicate: Whether to merge same-occurrence duplicates
+                (type union).
 
         Returns:
-            合并后的实体列表，按 (start, end) 排序；每实体 types
-            按概率降序，text 为原文精确子串。
+            Merged entities sorted by (start, end); each entity types
+            ranked by probability, text an exact source substring.
         """
         if not deduplicate:
             return sorted(entities, key=lambda e: (e.start, e.end, e.text))
-        # 按出现位置分组：同位置的跨窗口/跨批次判定合并为一个实体，
-        # 类型并集、同类型取最高概率；不同位置一律独立保留
+        # Group by occurrence: same-position judgments across windows/batches merge
+        # into one (type union, max probability per type); distinct positions stay independent
         by_span: dict[tuple[int, int], list[Entity]] = {}
         for e in entities:
             by_span.setdefault((e.start, e.end), []).append(e)
@@ -664,13 +721,13 @@ class JevNER:
         return merged
 
     def _recognize_genders(self, names: list[str]) -> dict[str, tuple[Gender, float]]:
-        """批量判定人名性别（带进程内缓存）。
+        """Batch-judge name gender (with the in-process cache).
 
         Args:
-            names: 人名列表（允许重复，结果按键去重）。
+            names: Name list (duplicates allowed; results keyed).
 
         Returns:
-            人名到 (性别, 概率) 的映射。
+            Mapping from name to (gender, probability).
         """
         results: dict[str, tuple[Gender, float]] = {}
         pending: list[str] = []
@@ -721,64 +778,72 @@ class JevNER:
         stride: int | None = None,
         deduplicate: bool = True,
     ) -> list[EntityNode]:
-        """对文本执行命名实体识别，返回实体嵌套森林。
+        """Recognize named entities in a text; returns the nesting forest.
 
-        完整管线：原文偏移词元 → 滑动窗口 → 逐词元 Noul 检测
-        （灰色区多轮复检）→ 区间子 span Choice 分型（NONE 一票
-        否决 + 多类型收集）→ 同位置去重合并 → PERSON 升级 Person
-        → 偏移包含关系建树。
+        Full pipeline: source-anchored tokens -> sliding windows ->
+        per-token Noul detection (gray-zone multiround recheck) ->
+        region sub-span Choice typing (NONE veto + multi-type
+        collection) -> per-occurrence merge -> PERSON upgrade -> tree
+        building by offset containment.
 
         Args:
-            s: 待识别文本，任意语言。
-            with_gender: 是否对 PERSON 实体附加性别判定。
-            entity_packs: 启用的实体包（对象或名称字符串）列表，
-                缺省时仅启用基础包 CORE。
-            entity_types: 额外显式启用的实体类型，与包并集叠加。
-            prob_threshold: 类型概率过滤阈值，[0, 1]。
-            fast_mode: True 时整段文本作为单一窗口直接判定（要求文本
-                在 jev 上下文限制内）；False 时启用滑动窗口长文本算法。
-            window_size: 覆盖实例级窗口大小（token 数）。
-            stride: 覆盖滑动步长，缺省为 window_size // 2。
-            deduplicate: 是否对跨窗口重复实体按 (text, type) 去重。
+            s: The text to process, in any language.
+            with_gender: Whether PERSON entities get a gender judgment.
+            entity_packs: Packs (objects or names) to enable; None
+                uses the taxonomy default packs.
+            entity_types: Extra explicit types (objects or labels),
+                unioned with the packs.
+            prob_threshold: Primary-type probability floor in [0, 1].
+            fast_mode: True treats the whole text as one window
+                directly (must fit gateway limits); False enables the
+                sliding-window long-text algorithm.
+            window_size: Override of the instance window size (tokens).
+            stride: Override of the slide step; defaults to
+                window_size // 2.
+            deduplicate: Whether to merge cross-window duplicates per
+                occurrence (type union).
 
         Returns:
-            实体嵌套森林：顶层（不被任何实体包含）EntityNode 列表，
-            按 (start, end) 排序；每节点的 entity 为实体本体（PERSON
-            实体在 with_gender=True 时为带性别字段的 Person），
-            children 为偏移落在其区间内的内层实体。嵌套关系直接
-            内含于返回值，无需下游再做后处理。
+            The entity nesting forest: top-level (uncontained)
+            EntityNode list sorted by (start, end); node.entity holds
+            the entity itself (PERSON entities carry gender when
+            with_gender=True) and node.children holds entities fully
+            inside its span. Nesting rides in the return value itself
+            — no downstream post-processing.
 
         Raises:
-            AssertionError: prob_threshold 不在 [0, 1] 内。
-            ValueError: entity_packs 中的名称字符串不是已注册的实体包、
-                实体类型解析为空或窗口参数非法。
-            TypeSafeError: 请求构造失败（如凭据缺失）。
-            TypeSafeAPIError: API 返回错误响应。
-            TypeSafeAPIConnectionError: 网络连接失败。
+            AssertionError: prob_threshold outside [0, 1].
+            ValueError: An unregistered pack name or type label, empty
+                type resolution, invalid window parameters, or a
+                window exceeding the request byte budget.
+            TypeSafeError: Request construction failed (e.g. missing
+                credentials).
+            TypeSafeAPIError: The API returned an error response.
+            TypeSafeAPIConnectionError: Network failure.
         """
         if not isinstance(s, str) or not s.strip():
             return []
         assert 0.0 <= prob_threshold <= 1.0, (
             f"prob_threshold ({prob_threshold}) must be within [0, 1]."
         )
-        # 实体类型解析：包选择 + 显式类型叠加（taxonomy 是语义唯一来源；
-        # PERSON 之类固定语义标签在体系内注册，非 PERSON 不做性别判定）
+        # Type resolution: packs + explicit types (taxonomy is the sole source;
+        # PERSON and other fixed semantic labels live in the taxonomy)
         types = self._taxonomy.resolve(entity_packs, entity_types)
         ws = window_size if window_size is not None else self._window_size
         st = stride if stride is not None else max(1, ws // DEFAULT_STRIDE_DIVISOR)
         if ws < 1 or st < 1:
             raise ValueError(f"window_size ({ws}) and stride ({st}) must be positive.")
-        # 窗口按原文 token 偏移切分，窗口文本取原文字符区间（词元
-        # 文本含空白前缀时会互相交叠，join 重建会产生重复字符），
-        # 词元偏移全部锚定在原文上——span 与实体因此携带原文全局
-        # 偏移，嵌套关联由偏移包含关系可靠判定
+        # Windows are cut on source token offsets; window text is sliced from the
+        # source character range (space-prefixed tokens overlap; re-joining would
+        # duplicate chars), so token offsets stay source-anchored — spans and
+        # entities carry source-global offsets, nesting derives from containment
         if fast_mode:
             windows = [(s, self._tokenizer.window_tokens(s))]
         else:
             windows = self._tokenizer.windows(s, ws, st)
-        # 请求体字节防护：窗口文本是请求体的大头，超预算直接报错
-        # （服务端 65,535 字节硬限制的超限请求是 500，报错不指向
-        # 根因，这里给出可操作的指引）
+        # Request-body guard: window text dominates the body; over budget fails fast
+        # (an oversized request returns an opaque 500 rather than an actionable
+        # error, so this raises with actionable guidance)
         for window_text, _toks in windows:
             if len(window_text.encode("utf-8")) > REQUEST_STATE_BUDGET:
                 raise ValueError(
@@ -786,8 +851,8 @@ class JevNER:
                     f"({REQUEST_STATE_BUDGET} bytes of {REQUEST_MAX_BYTES} allowed). "
                     f"Use a smaller window_size (current {ws} tokens)."
                 )
-        # 窗口级并行：每窗独立完成检测 + 分型（检测/分型批已在
-        # 线程池上并发），窗口间再并发提交；串行配置或单窗口退化为顺序执行
+        # Window-level parallelism: each window runs detection + typing
+        # independently (batches already parallel); sequential config or single window runs in order
         if len(windows) <= 1 or self._max_workers <= 1:
             window_entities = [
                 self._type_window(window_text, toks, types, prob_threshold)
@@ -807,8 +872,8 @@ class JevNER:
         entities: list[Entity] = [e for ents in window_entities for e in ents]
         merged = self._combine(entities, deduplicate)
         if with_gender:
-            # PERSON 宇实升级为 Person（附带性别判定），再建树；
-            # PERSON 标签由 taxonomy 保证存在（开放体系的固定语义锚点）
+            # Upgrade PERSON entities to Person (with gender), then build the tree;
+            # the PERSON label always exists in a taxonomy (fixed semantic anchor)
             names = [e.text for e in merged if e.type.label == PERSON_LABEL]
             genders = self._recognize_genders(names)
             merged = [
@@ -826,15 +891,15 @@ class JevNER:
                 )
                 for e in merged
             ]
-        # 按偏移包含关系重建嵌套树：返回值自身即含关联结构
+        # Rebuild the nesting tree by offset containment: the return value carries the structure
         return entity_tree(merged)
 
     def close(self) -> None:
-        """释放底层 HTTP 客户端。"""
+        """Release the underlying HTTP client."""
         self._client.close()
 
     def __enter__(self) -> Self:
-        """进入上下文管理器。"""
+        """Enter the context manager."""
         return self
 
     def __exit__(
@@ -843,5 +908,5 @@ class JevNER:
         exc_value: BaseException | None,
         traceback: object | None,
     ) -> None:
-        """退出上下文管理器并释放资源。"""
+        """Exit the context manager and release resources."""
         self.close()

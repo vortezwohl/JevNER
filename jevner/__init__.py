@@ -1,22 +1,26 @@
-"""jevner：无本地模型的多语言命名实体识别 SDK。
+"""jevner: a no-local-model SDK for multilingual named entity recognition.
 
-以 System One 网关模型（默认 baseten/mammoth-1）替代全部本地 BERT
-推理，参考 DeepLoTX BertNER 的长文本滑动窗口算法，随包分发 Qwen3
-分词器。模型经 model_name 参数随时切换（jev-latest 等网关注册模型
-均可）。
+A System One gateway model (default baseten/mammoth-1) replaces all
+local BERT inference, following DeepLoTX BertNER's long-text sliding
+window algorithm, with a bundled Qwen3 tokenizer. Switch models any
+time via model_name (any model registered on the gateway works, e.g.
+jev-latest).
 
-实体类型体系：基础实体包 EntityPack.CORE（OntoNotes 5.0 十八类 +
-MISC 兜底）默认启用，垂直领域包 EntityPack.BIOMED（生物医学）、
-EntityPack.FINANCE（金融）、EntityPack.TECH（软件科技）按需叠加。
+Type system: the base pack EntityPack.CORE (18 OntoNotes 5.0 types +
+MISC fallback) is on by default; vertical packs EntityPack.BIOMED
+(biomedical), EntityPack.FINANCE (finance), and EntityPack.TECH
+(software) stack on demand. The whole system is open: extend types
+and packs at runtime through EntityTaxonomy.from_json.
 
-调用方最常用的入口：
-- JevNER：识别器实例，调用即返回实体嵌套森林（list[EntityNode]，
-  print 直接得到可读树形）；
-- EntityType / Gender / EntityPack：类型、性别与实体包枚举；
-- Entity / Person / EntityNode：结果数据类。
+Most-used entry points:
+- JevNER: the recognizer; calling it returns the nested entity forest
+  (list[EntityNode]; printing renders a readable tree);
+- EntityType / Gender / EntityPack: type, gender, and pack objects;
+- Entity / Person / EntityNode: result dataclasses.
 
-凭据从环境变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL 读取；
-除 TypeSafe API 外没有任何模型下载或本地推理。
+Credentials come from the TYPESAFE_API_KEY / TYPESAFE_BASE_URL
+environment variables; beyond the gateway API there is no model
+download and no local inference.
 """
 
 from jevner.entities import (

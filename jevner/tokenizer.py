@@ -1,18 +1,23 @@
-"""随包分发的 Qwen3 分词器封装。
+"""The bundled Qwen3 tokenizer wrapper.
 
-本模块封装随 SDK 一同打包发行的 Qwen3 tokenizer（字节级 BPE，对包括
-CJK、泰文、阿拉伯文在内的上百种语言均有良好覆盖），承担 jevner 全部
-本地文本处理：token 计数、长文本滑动窗口切分与词元字符定位。
+This module wraps the Qwen3 tokenizer shipped inside the SDK package
+(byte-level BPE with good coverage of 100+ languages including CJK,
+Thai, and Arabic). It performs all local text handling for jevner:
+token counting, sliding-window splitting, and token-level character
+anchoring.
 
-调用方与维护者进入本文件时最需要先知道：
-- 分词器文件位于包内 assets/qwen3_tokenizer.json，由包数据随 SDK 一起
-  安装，用户无需访问 HuggingFace，也无需安装 transformers/torch；
-- 候选实体不依赖固定 n-gram：检测阶段逐词元判断是否属于实体，区间
-  重建与子 span 生成都基于词元的字符偏移量，对无空格文字（中文/
-  泰文）与粘着语（阿拉伯文/马来文）一视同仁；
-- 滑动窗口与 BertNER 同构：按 token 序列取窗口、逐窗口 decode 回
-  文本，窗口边界永远落在 token 边界上，不会把多 token 实体从字符
-  中间劈开。
+What callers and maintainers need to know first:
+- The tokenizer file lives at assets/qwen3_tokenizer.json inside the
+  package, installed together with the SDK — users never touch
+  HuggingFace and never need transformers or torch.
+- Candidate spans do not depend on fixed n-grams: the detection stage
+  judges token by token, and both region reassembly and sub-span
+  generation work on token character offsets, treating unspaced
+  scripts (Chinese/Thai) and agglutinative languages (Arabic/Malay)
+  identically.
+- Sliding windows mirror BertNER: windows are cut on token sequences
+  and decoded back per window, so window boundaries always land on
+  token edges and never split a multi-token entity mid-character.
 """
 
 from __future__ import annotations
@@ -23,25 +28,27 @@ from pathlib import Path
 from tokenizers import Encoding, Tokenizer
 
 _ASSET_PATH = Path(__file__).parent / "assets" / "qwen3_tokenizer.json"
-"""随包分发的 Qwen3 tokenizer 文件路径。"""
+"""Path to the bundled Qwen3 tokenizer file."""
 
 
 def _is_edge_junk(ch: str) -> bool:
-    """判断字符是否为应从实体边界剥离的空白或标点（货币符号等保留）。"""
+    """True for whitespace or punctuation stripped from entity edges
+    (currency symbols and other non-P characters are kept)."""
     return ch.isspace() or unicodedata.category(ch)[0] == "P"
 
 
 def strip_edge_punctuation(text: str) -> str:
-    """剥离文本首尾的空白与标点（保留货币符号等其他字符）。
+    """Strip leading/trailing whitespace and punctuation from a string.
 
-    词元偏移切片常把紧邻标点带进候选文本（如 "子豪,"），不剥离会
-    污染实体文本并破坏跨 span 的包含判定。
+    Token-offset slices often pull adjacent punctuation into a
+    candidate span (e.g. "子豪,"), which pollutes entity text and
+    breaks cross-span containment tests if left in place.
 
     Args:
-        text: 待清洗的候选 span 文本。
+        text: The candidate span text to clean.
 
     Returns:
-        清洗后的文本；可能为空字符串。
+        The cleaned text; possibly an empty string.
     """
     start, end = 0, len(text)
     while start < end and _is_edge_junk(text[start]):
@@ -52,20 +59,21 @@ def strip_edge_punctuation(text: str) -> str:
 
 
 def strip_span(s: str, start: int, end: int) -> tuple[str, int, int]:
-    """剥离区间首尾的空白与标点，偏移随文本同步修正。
+    """Strip edge whitespace/punctuation from a range, moving offsets with it.
 
-    与 strip_edge_punctuation 的区别：作用在原文区间上，返回
-    (清洗后文本, 新起点, 新终点)。新偏移保证
-    text == s[new_start:new_end]，使实体文本始终是原文的精确
-    子串——嵌套关联由偏移包含关系判定，偏移锚定必须与文本严格一致。
+    Unlike strip_edge_punctuation, this operates on a source range and
+    returns (cleaned text, new start, new end). The new offsets keep
+    the invariant text == s[new_start:new_end], so entity text stays
+    an exact substring of the source — the anchor for nesting-by-
+    containment must track the text exactly.
 
     Args:
-        s: 原文文本。
-        start: 区间起点（含），越界时钳制到 [0, len(s)]。
-        end: 区间终点（不含），越界时钳制到 [0, len(s)]。
+        s: The source text.
+        start: Range start (inclusive), clamped to [0, len(s)].
+        end: Range end (exclusive), clamped to [0, len(s)].
 
     Returns:
-        (清洗后文本, 清洗后起点, 清洗后终点) 三元组。
+        A (cleaned text, cleaned start, cleaned end) triple.
     """
     start = max(0, min(start, len(s)))
     end = max(0, min(end, len(s)))
@@ -77,74 +85,81 @@ def strip_span(s: str, start: int, end: int) -> tuple[str, int, int]:
 
 
 class BundledTokenizer:
-    """基于随包 Qwen3 分词器的轻量封装。
+    """A lightweight wrapper over the bundled Qwen3 tokenizer.
 
-    提供 jevner 算法所需的本地能力：token 序列化、滑动窗口文本切分、
-    词元字符定位。全部为纯 CPU 的确定性本地计算，不发起任何网络请求。
+    Provides the local capabilities the jevner pipeline needs: token
+    serialization, sliding-window splitting, and token character
+    anchoring. Everything is deterministic, CPU-only local computation;
+    no network requests are ever made.
     """
 
     def __init__(self, asset_path: Path = _ASSET_PATH) -> None:
-        """加载随包分发的分词器文件。
+        """Load the bundled tokenizer file.
 
         Args:
-            asset_path: tokenizer.json 文件路径，默认使用包内资产。
+            asset_path: Path to tokenizer.json; defaults to the
+                in-package asset.
 
         Raises:
-            FileNotFoundError: 分词器资产文件不存在（发行包损坏）。
-            Exception: 分词器文件解析失败时由 tokenizers 库向上抛出。
+            FileNotFoundError: The tokenizer asset is missing
+                (corrupted distribution).
+            Exception: Whatever the tokenizers library raises if the
+                file fails to parse.
         """
         if not asset_path.exists():
             raise FileNotFoundError(f"Bundled tokenizer asset not found: {asset_path}")
         self._tokenizer = Tokenizer.from_file(str(asset_path))
 
     def encode(self, s: str) -> Encoding:
-        """将文本编码为 token 序列（不含特殊 token）。
+        """Encode text into a token sequence (no special tokens).
 
         Args:
-            s: 待编码文本。
+            s: The text to encode.
 
         Returns:
-            tokenizers.Encoding，含 .ids 与字符级 .offsets。
+            A tokenizers.Encoding with .ids and character-level .offsets.
         """
         return self._tokenizer.encode(s, add_special_tokens=False)
 
     def decode(self, ids: list[int]) -> str:
-        """将 token 序列解码回文本。
+        """Decode a token sequence back into text.
 
         Args:
-            ids: token id 列表。
+            ids: Token id list.
 
         Returns:
-            解码后的文本（跳过特殊 token）。
+            The decoded text (special tokens skipped).
         """
         return self._tokenizer.decode(ids, skip_special_tokens=True)
 
     def count_tokens(self, s: str) -> int:
-        """统计文本的 token 数。
+        """Count the tokens in a text.
 
         Args:
-            s: 待统计文本。
+            s: The text to measure.
 
         Returns:
-            token 数量。
+            The token count.
         """
         return len(self.encode(s).ids)
 
     def window_texts(self, s: str, window_size: int, stride: int) -> list[str]:
-        """按 token 序列对长文本做滑动窗口切分。
+        """Split long text into sliding windows over the token sequence.
 
-        与 BertNER 的 _slow_extract 同构：文本 token 数不超过窗口大小时
-        整段作为单个窗口；超过时按 stride 步进取 token 切片并逐窗口
-        decode 回文本，相邻窗口保留重叠，保证跨窗口边界的实体至少在
-        一个窗口内完整出现。
+        Mirrors BertNER's _slow_extract: text whose token count fits
+        within one window is returned as a single whole window;
+        otherwise token slices advance by stride and each window is
+        decoded back to text, with adjacent windows overlapping so an
+        entity crossing a boundary appears fully in at least one.
 
         Args:
-            s: 待切分文本。
-            window_size: 窗口大小（token 数）。
-            stride: 滑动步长（token 数），应小于 window_size 以保留重叠。
+            s: The text to split.
+            window_size: Window size in tokens.
+            stride: Slide step in tokens; keep below window_size to
+                retain overlap.
 
         Returns:
-            窗口文本列表，按原文顺序排列。
+            Window texts in source order.
         """
         enc = self.encode(s)
         if len(enc.ids) <= window_size:
@@ -158,16 +173,18 @@ class BundledTokenizer:
         return texts
 
     def window_tokens(self, s: str) -> list[tuple[int, int, str]]:
-        """返回文本全部词元的字符偏移与文本。
+        """Return every token's character offsets and text.
 
-        词元级检测（逐词元 Noul）之后，代码侧用本结果在字符层重建
-        连续实体区间，是替代固定 n-gram 的语言无关基础。
+        After token-level detection (one Noul per token), the code side
+        uses this to rebuild contiguous entity regions at the character
+        level — the language-agnostic foundation replacing fixed
+        n-grams.
 
         Args:
-            s: 窗口文本。
+            s: The window text.
 
         Returns:
-            (字符起点, 字符终点, 词元文本) 列表，按文本顺序排列。
+            (char start, char end, token text) triples in text order.
         """
         enc = self.encode(s)
         return [(start, end, s[start:end]) for (start, end) in enc.offsets]
@@ -175,29 +192,35 @@ class BundledTokenizer:
     def windows(
         self, s: str, window_size: int, stride: int
     ) -> list[tuple[str, list[tuple[int, int, str]]]]:
-        """按 token 序列对长文本做滑动窗口切分，返回原文窗口。
+        """Split long text into sliding windows over the token sequence.
 
-        与 window_texts 的区别：窗口不经 decode 往返，直接取原文
-        字符区间 s[c_start:c_end] 作为窗口文本，窗口内词元偏移就是
-        原文全局偏移（text == s[start:end] 恒成立）。下游 span 因此
-        携带原文偏移，实体嵌套关联由偏移包含关系可靠判定。
+        Unlike window_texts, windows are cut directly from the source
+        character range s[c_start:c_end] with no decode round-trip,
+        and each window's token offsets are global source offsets
+        (invariant: text == s[start:end]). Downstream spans therefore
+        carry source offsets, and nesting derives reliably from offset
+        containment.
 
-        注意词元文本不能重新拼接成窗口文本：Qwen3 对空白开头的词元
-        （如 " 我"）与后续词元存在字符交叠，join 会产生重复字符，
-        使检测 state 与词元错位。窗口文本必须从原文字符区间切出。
+        Token texts must never be re-joined into window text: Qwen3
+        emits overlapping tokens for space-prefixed tokens (e.g. " 我")
+        and joining duplicates characters, misaligning the detection
+        state against its tokens. Window text must be sliced from the
+        source character range.
 
-        切分策略与 window_texts 一致：token 数不超过窗口大小时
-        整段作为单个窗口；超过时按 stride 步进取词元切片，窗口文本
-        覆盖首个到最后词元的字符区间，相邻窗口保留重叠。
+        Splitting matches window_texts: token count within one window
+        returns a single whole window; otherwise slices advance by
+        stride, window text covers the first through last token's
+        character range, and adjacent windows overlap.
 
         Args:
-            s: 待切分文本。
-            window_size: 窗口大小（token 数）。
-            stride: 滑动步长（token 数），应小于 window_size 以保留重叠。
+            s: The text to split.
+            window_size: Window size in tokens.
+            stride: Slide step in tokens; keep below window_size to
+                retain overlap.
 
         Returns:
-            (窗口文本, 窗口词元列表) 元组列表；词元为
-            (原文起点, 原文终点, 词元文本)，偏移即原文全局偏移。
+            (window text, window tokens) pairs; tokens carry source
+            offsets (start, end, text).
         """
         enc = self.encode(s)
         offsets = enc.offsets

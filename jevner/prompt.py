@@ -1,20 +1,26 @@
-"""jevner 的提示词模板。
+"""Prompt templates for jevner.
 
-基于 prompt4py 的 GeneralTemplate 渲染三类请求级 state 提示词，
-全部遵循结构化提示词设计方法论（七层语义模型 + 规范序列化顺序）：
-词元检测 state（逐词元 Noul）、实体分型 state（子 span Choice）、
-人名性别 state。提示词主体语言为英文（System One 模型以英语为
-主要训练语言，英文指令的语义分辨最稳定），示例中的文本数据
-本身保留原语种（多语种示例是受管理的 CONTEXT，刻意覆盖无空格
-文字与右到左文字以支撑全球语种兼容）。
+Renders the three request-level state prompts through prompt4py's
+GeneralTemplate, all following the structured prompt design
+methodology (seven-layer semantic model + canonical serialization
+order): token detection state (per-token Noul), entity typing state
+(sub-span Choice), and name gender state. Prompt bodies are English
+(System One models are trained primarily on English, so English
+instructions resolve most stably), while example text data stays in
+its original language (multilingual examples are managed CONTEXT,
+deliberately covering unspaced and right-to-left scripts for
+worldwide language support).
 
-调用方与维护者进入本文件时最需要先知道：
-- 三个 state 均以 SOURCE_TEXT 为 INPUT 载荷，类型表与定义作为只读
-  CONTEXT 下发，每条问题的 instructions 只携带最小动态载荷；
-- 输出协议三件套（OUTPUT_DATATYPE/OUTPUT_FORMAT/OUTPUT_EXAMPLE）
-  在每个 state 中齐备，保证 jev 的回答可被程序校验；
-- 渲染结果为 JSON 字符串（render(markdown=False)），System One
-  模型被训练为理解结构化文本，键名即语义标签。
+What callers and maintainers need to know first:
+- All three states carry SOURCE_TEXT as the INPUT payload; the type
+  table and definitions ride as read-only CONTEXT, and each question's
+  instructions carry only the minimal dynamic payload.
+- The output protocol triple (OUTPUT_DATATYPE / OUTPUT_FORMAT /
+  OUTPUT_EXAMPLE) is present in every state, keeping model answers
+  programmatically checkable.
+- Rendered results are JSON strings (render(markdown=False)); System
+  One models are trained to read structured text, and key names are
+  the semantic labels.
 """
 
 from __future__ import annotations
@@ -27,17 +33,18 @@ from jevner.entities import EntityType
 
 
 def render_detection_state(source_text: str) -> str:
-    """渲染词元检测请求的 state 提示词。
+    """Render the state prompt for a token-detection request.
 
     Each question answers, as a Noul, whether INPUT.TOKEN is part of
     some named entity in SOURCE_TEXT. Hits drive the deterministic
     region reassembly in code.
 
     Args:
-        source_text: 窗口原文（本请求全部问题的共享上下文）。
+        source_text: The window text (shared context for all questions
+            in this request).
 
     Returns:
-        JSON 字符串形式的 state，供 system_one 请求使用。
+        The state as a JSON string, for use in a system_one request.
     """
     template = GeneralTemplate()
     template.role = "You are a meticulous multilingual text analyst working at token granularity."
@@ -92,20 +99,22 @@ def render_detection_state(source_text: str) -> str:
 
 
 def render_typing_state(source_text: str, entity_types: tuple[EntityType, ...]) -> str:
-    """渲染实体分型请求的 state 提示词。
+    """Render the state prompt for an entity-typing request.
 
     Each question picks, as a Choice, the best entity type for
     INPUT.SPAN from CONTEXT.ENTITY_TYPES; NONE means the span is not
-    a named entity. 开放式类型下每个 EntityType 自带 label 与
-    description，类型表直接由参数生成（不再查全局描述表）。
+    a named entity. With open types, every EntityType carries its own
+    label and description, and the type table is generated directly
+    from the argument (no global description table involved).
 
     Args:
-        source_text: 窗口原文（本请求全部问题的共享上下文）。
-        entity_types: 本次识别启用的实体类型序列（已按 label 排序），
-            类型表写入 CONTEXT 下发。
+        source_text: The window text (shared context for all questions
+            in this request).
+        entity_types: The enabled entity types for this recognition,
+            already sorted by label; written into CONTEXT.
 
     Returns:
-        JSON 字符串形式的 state，供 system_one 请求使用。
+        The state as a JSON string, for use in a system_one request.
     """
     template = GeneralTemplate()
     template.role = "You are an expert multilingual named-entity-recognition annotator."
@@ -163,10 +172,10 @@ def render_typing_state(source_text: str, entity_types: tuple[EntityType, ...]) 
 
 
 def render_gender_state() -> str:
-    """渲染人名性别判定请求的 state 提示词。
+    """Render the state prompt for a name-gender request.
 
     Returns:
-        JSON 字符串形式的 state，供 system_one 请求使用。
+        The state as a JSON string, for use in a system_one request.
     """
     template = GeneralTemplate()
     template.role = (

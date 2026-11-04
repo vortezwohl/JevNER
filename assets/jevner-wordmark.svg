@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="220" viewBox="0 0 1040 220" role="img" aria-labelledby="title desc">
+  <title id="title">JevNER</title>
+  <desc id="desc">JevNER wordmark: a TRON-style detection reticle beside the product name in neon cyan on dark.</desc>
+  <defs>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="4" result="b1"/>
+      <feGaussianBlur stdDeviation="9" result="b2"/>
+      <feMerge>
+        <feMergeNode in="b2"/>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="dim" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0E7490"/>
+      <stop offset="1" stop-color="#164E63"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1040" height="220" fill="#050A14"/>
+
+  <!-- faint grid backdrop -->
+  <g stroke="#0C1B2A" stroke-width="1">
+    <path d="M0 55H1040M0 110H1040M0 165H1040"/>
+    <path d="M340 0V220M520 0V220M700 0V220M880 0V220"/>
+  </g>
+
+  <!-- mini reticle mark, left of the wordmark -->
+  <g transform="translate(72 60) scale(0.33)">
+    <g fill="none" stroke="#00E5FF" stroke-width="14" stroke-linecap="square" filter="url(#glow)">
+      <path d="M20 60V20H60"/>
+      <path d="M196 20H236V60"/>
+      <path d="M236 196V236H196"/>
+      <path d="M60 236H20V196"/>
+    </g>
+    <rect x="44" y="96" width="64" height="20" fill="none" stroke="url(#dim)" stroke-width="12"/>
+    <rect x="148" y="96" width="64" height="20" fill="none" stroke="url(#dim)" stroke-width="12"/>
+    <rect x="92" y="146" width="72" height="22" fill="#00E5FF" stroke="#7FF6FF" stroke-width="6" filter="url(#glow)"/>
+    <path d="M92 157H164" stroke="#B6FF00" stroke-width="8" stroke-linecap="square" filter="url(#glow)"/>
+  </g>
+
+  <!-- wordmark: dark offset slab, neon fill, chroma trim -->
+  <g font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-weight="800" font-size="112" letter-spacing="2" text-anchor="middle">
+    <text x="715" y="152" fill="#01131C">JevNER</text>
+    <text x="707" y="144" fill="#00E5FF" filter="url(#glow)">JevNER</text>
+    <text x="707" y="144" fill="none" stroke="#B6FF00" stroke-width="2" opacity="0.55">JevNER</text>
+  </g>
+
+  <!-- entity tick under the name, echoing the icon -->
+  <rect x="600" y="176" width="88" height="8" fill="url(#dim)"/>
+  <rect x="700" y="176" width="88" height="8" fill="url(#dim)"/>
+  <rect x="660" y="192" width="120" height="10" fill="#00E5FF" filter="url(#glow)"/>
+</svg>

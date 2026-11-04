@@ -1,33 +1,63 @@
-# JevNER
+<div align="center">
 
-无本地模型的多语言命名实体识别 SDK：经 System One 网关用 **baseten/mammoth-1**（默认，可经 `model_name` 切换网关内任意模型）替代全部本地 BERT 推理，参考 [DeepLoTX BertNER](https://github.com/vortezwohl/DeepLoTX) 的长文本滑动窗口算法，随包分发 Qwen3 分词器。
+<h1>
+  <img src="assets/jevner-wordmark.svg" alt="JevNER" width="520" />
+</h1>
 
-## 特性
+**No local models. Calibrated probabilities. Nested entities.**
 
-- **全球语种**：词元检测 + 区间分型两阶段算法，不依赖固定 n-gram 假设；实测覆盖亚洲/欧洲/美洲 24 语种（汉/日/韩/泰/越/印尼/马来/菲律宾/印地/阿拉伯/希伯来/土耳其 + 英法德西葡意俄荷波 + 美洲三语），无空格文字与粘着语均正确识别；
-- **上下文窗口**：默认窗口 12k token（按 65,535 字节请求体硬限制换算），超长文本由滑动窗口 + 窗口级并行处理；
-- **多类型实体**：一个实体可同时具有多种类型（国家既是政区 GPE 又是地点 LOC），`types` 按相关性（概率）降序排列，不强制单一类型；`type`/`base_probability` 属性兼容单类型访问；
-- **无本地模型**：不加载任何神经网络权重，唯一推理依赖是 System One 网关 API（默认 `baseten/mammoth-1`）；
-- **随包分词器**：Qwen3 字节级 BPE 分词器（覆盖 100+ 语言含 CJK）打包在包内 `assets/`，无需访问 HuggingFace，无需 transformers/torch；
-- **开放式类型体系**：实体类型与实体包不写死——内置 CORE/BIOMED/FINANCE/TEC 四包 31 类型仅是基座，任何用户（含非程序员的 C 端用户）可经 JSON 三段式配置（`entity_types`/`entity_packs`/`default_packs`）自定义新类型、新组合并设默认包，`EntityTaxonomy.from_json` 一行构建；
-- **嵌套实体树**：返回值即 `list[EntityNode]` 森林，偏移包含关系派生（交叉嵌套挂最近公共外层成兄弟），`print(node)` 直接得到可读树形，无需下游后处理；
-- **性别识别**：PERSON 实体自动附加性别判定（MALE/FEMALE/UNKNOWN），进程内 LRU 缓存；
-- **typesafe**：全量类型标注（`py.typed`），mypy 零错误，提示词按结构化提示词设计方法论（七层语义模型）经 prompt4py 渲染，ruff 全量格式化。
+*A typesafe Python SDK for multilingual named entity recognition over System One gateway models, with a bundled Qwen3 tokenizer.*
 
-## 安装
+[![PyPI](https://img.shields.io/pypi/v/jevner?style=flat-square&color=00CFFF&label=PyPI)](https://pypi.org/project/jevner/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-2563EB?style=flat-square&logo=python&logoColor=white)](pyproject.toml)
+[![License](https://img.shields.io/badge/License-MIT-B6FF00?style=flat-square&labelColor=07121F)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/vortezwohl/JevNER?style=flat-square&label=Stars)](https://github.com/vortezwohl/JevNER/stargazers)
+
+<a href="https://docs.typesafe.ai">
+  <img src="https://img.shields.io/badge/TypeSafe-System%20One-00E5FF?style=flat-square&logo=github&logoColor=white" alt="TypeSafe System One" />
+</a>
+<a href="https://github.com/vortezwohl/DeepLoTX">
+  <img src="https://img.shields.io/badge/DeepLoTX-BertNER-7C3AED?style=flat-square&logo=github&logoColor=white" alt="DeepLoTX BertNER" />
+</a>
+<a href="https://huggingface.co/Qwen/Qwen3-8B">
+  <img src="https://img.shields.io/badge/Qwen3-Tokenizer-B6FF00?style=flat-square&logo=huggingface&logoColor=white" alt="Qwen3 tokenizer" />
+</a>
+
+**One call. A nested entity forest. Every probability calibrated.**
+
+[Why](#why-jevner) &middot; [Quick start](#quick-start) &middot; [Capabilities](#core-capabilities) &middot; [Patterns](#common-patterns) &middot; [API](#public-api) &middot; [Boundaries](#design-boundaries)
+
+</div>
+
+---
+
+## Why JevNER
+
+Most NER stacks make you choose: a fast local model frozen to one label set, or a hosted API with fixed entity types and no confidence you can act on.
+
+JevNER takes a third path. A System One gateway model acts as the tagger: every question returns typed answers with calibrated probabilities instead of generated text, and the SDK assembles them into a nested entity forest you can print as a tree.
+
+| Where classic NER falls short | What JevNER makes explicit |
+| --- | --- |
+| Label sets are frozen at fine-tuning time; new domains need new training runs. | Entity types and packs are open data: a JSON document defines new types, new packs, and defaults at runtime. |
+| Hosted NER APIs return flat spans; nested entities are flattened or dropped. | The return value is a forest: `node.children` holds every entity contained in `node`, derived from offset containment. |
+| A softmax score is not a probability you can route on. | Choice probabilities are calibrated: `0.8` behaves like "right 80% of the time", enabling confidence-gated review flows. |
+| One span, one type — even when a name is both a place and an organization. | `Entity.types` carries every competitive type with its probability, ranked by relevance. |
+| Multilingual coverage means one fine-tuned model per language. | The same pipeline scored 24 languages across Asia, Europe, and the Americas with zero training. |
+| Every deployment pulls model weights from a hub. | No local model exists. A bundled Qwen3 tokenizer handles windowing; all inference goes through the System One gateway. |
+
+## Quick Start
 
 ```bash
-uv add jevner        # 或 pip install jevner
+uv add -U jevner        # or: pip install -U jevner
 ```
 
-## 快速开始
-
 ```python
-from jevner import EntityPack, EntityTaxonomy, JevNER
+from jevner import JevNER
 
-ner = JevNER()  # 凭据读取环境变量 TYPESAFE_API_KEY / TYPESAFE_BASE_URL
+ner = JevNER()  # credentials read from TYPESAFE_API_KEY / TYPESAFE_BASE_URL
 
-# 返回值即实体嵌套森林，print 直接得到可读树形
+# The return value IS the nested forest: printing it renders a tree.
 forest = ner("你好, 我的名字是吴子豪, 来自福建福州.")
 for node in forest:
     print(node)
@@ -35,74 +65,150 @@ for node in forest:
 # 福建福州 (GPE 1.00) [16:20]
 # ├── 福建 (GPE 1.00) [16:18]
 # └── 福州 (GPE 1.00) [18:20]
+```
 
-# 垂直领域：生物医学实体包
-forest = ner("患者确诊为二型糖尿病, 服用二甲双胍控制血糖.", entity_packs=["BIOMED"])
+That is the complete first loop: no model download, no fine-tuning, no post-processing. PERSON entities are upgraded to `Person` with a gender judgment, offsets always satisfy `text == source[start:end]`, and nesting rides in the return value itself.
+
+> [!TIP]
+> The gateway routes several System One models. The default is `baseten/mammoth-1`; switch any time with `JevNER(model_name="jev-latest")`.
+
+## Core Capabilities
+
+| Capability | What you get |
+| --- | --- |
+| Nested entity forest | `ner(text)` returns `list[EntityNode]`. Offset containment builds the tree; crossing spans attach to the nearest common ancestor as siblings. |
+| Calibrated multi-type entities | `Entity.types` is a `(EntityType, probability)` tuple sequence ranked by relevance — one entity can be GPE *and* LOC. |
+| Open taxonomy from JSON | `EntityTaxonomy.from_json` accepts a three-section document (`entity_types`, `entity_packs`, `default_packs`) that extends or overrides the 31 built-in types and 4 packs. Built for non-programmer users. |
+| Vertical entity packs | `CORE` (18 OntoNotes 5.0 types + MISC) ships by default; `BIOMED`, `FINANCE`, and `TECH` stack on demand. |
+| 24-language coverage | Verified end to end across Asia, Europe, and the Americas — Chinese, Thai, Arabic, Hebrew, Hindi, Turkish, English, French, German, Russian, Polish, Brazilian Portuguese, Mexican Spanish, and more. |
+| Gender recognition | PERSON entities are upgraded to `Person` with `MALE` / `FEMALE` / `UNKNOWN` and a probability, cached in-process. |
+| Bundled Qwen3 tokenizer | Byte-level BPE covering 100+ languages ships inside the package — no HuggingFace access, no `transformers`, no `torch`. |
+| Long documents | Sliding windows sized from the gateway's 65,535-byte request budget, 50% overlap, window-level and batch-level thread pools. |
+| Three-layer caching | Detection, typing, and gender results sit in LRU caches keyed by window hash; repeated or overlapping text returns in milliseconds. |
+| Typesafe throughout | Full annotations with `py.typed`, mypy-clean under strict settings, prompts rendered through the structured prompt4py templates. |
+
+## Common Patterns
+
+### Print the forest, not a flat list
+
+The return value is already the tree. `str(node)` renders a node and its descendants with box-drawing lines, types, probabilities, gender, and offsets.
+
+```python
+forest = ner("Bank of America opened a new branch in New York.")
+print(forest[0])
+# Bank of America (ORG 1.00) [0:15]
+# └── America (GPE 0.52 · ORG 0.30) [8:15]
+```
+
+### Enable a vertical pack
+
+Packs stack by name; the type table sent to the model contains exactly the union you selected.
+
+```python
+forest = ner(
+    "患者确诊为二型糖尿病, 服用二甲双胍控制血糖.",
+    entity_packs=["BIOMED"],
+)
 # 二型糖尿病 (DISEASE 1.00) [5:10]
 # ├── 糖尿病 (DISEASE 0.99) [7:10]
 # 二甲双胍 (DRUG 1.00) [14:18]
+```
 
-# C 端用户：JSON 三段式自定义类型体系（新增类型 BRAND + 新包 ECOM + 默认包切换）
+### Define a taxonomy from JSON
+
+Any user — including one who never opens a code editor — can extend the recognition vocabulary with a JSON document. Custom types are first-class citizens alongside the built-ins.
+
+```python
+from jevner import EntityTaxonomy, JevNER
+
 taxonomy = EntityTaxonomy.from_json("""
 {
-  "entity_types": {"BRAND": "A brand or trademark name (e.g. Apple, Nike)."},
-  "entity_packs": {"ECOM": ["PERSON", "ORG", "BRAND"]},
+  "entity_types": {
+    "BRAND": "A brand or trademark name (e.g. Apple, Nike)."
+  },
+  "entity_packs": {
+    "ECOM": ["PERSON", "ORG", "BRAND"]
+  },
   "default_packs": ["CORE", "ECOM"]
 }
 """)
-ner = JevNER(taxonomy=taxonomy)  # 之后全部调用默认按新体系识别
-forest = ner("Apple released the iPhone 17 Pro, and Nike sponsored it.")
+
+ner = JevNER(taxonomy=taxonomy)
+forest = ner("Tim Cook announced that Apple launched the new iPhone while Nike sponsored it.")
 ```
 
-返回值是 `list[EntityNode]`：顶层（不被包含的实体）节点按 `(start, end)` 排序，`node.entity` 为实体本体，`node.children` 递归内层实体。`Entity.types` 是 `(EntityType, probability)` 元组序列（概率降序，一实体可多类型）；`Entity.type` / `base_probability` 取首项；`start` / `end` 是原文全局字符偏移（恒满足 `text == source[start:end]`），嵌套即由偏移包含关系派生。
+`from_json` accepts a JSON string or an already-parsed dict. Unknown type references, empty descriptions, and unregistered default packs raise `ValueError` with the offending field path.
 
-## API
+### Tune the pipeline
 
 ```python
-JevNER(model_name="baseten/mammoth-1", *, api_key=None, base_url=None, timeout=None,
-       window_size=12000)  # 按 65,535 字节请求体预算换算
-
-ner(s, *, with_gender=True, entity_packs=None, entity_types=None,
-    prob_threshold=0.5, fast_mode=False, window_size=None, stride=None,
-    deduplicate=True) -> list[EntityNode]
+forest = ner(
+    long_document,
+    prob_threshold=0.7,      # stricter primary-type floor (default 0.5)
+    with_gender=False,       # skip gender judgments entirely
+    window_size=4096,        # smaller windows, more overlap
+    max_workers=4,           # window-level concurrency (default 8)
+)
 ```
 
-| 参数 | 说明 |
-| --- | --- |
-| `entity_packs` | 实体包名（或 `EntityPack` 对象）列表，缺省 `["CORE"]`；可传 `["CORE", "BIOMED"]` 叠加 |
-| `entity_types` | 额外显式启用的 `EntityType`，与包并集叠加 |
-| `with_gender` | 是否对 PERSON 实体附加性别判定 |
-| `prob_threshold` | 主类型概率过滤阈值，[0, 1]，默认 0.5 |
-| `fast_mode` | `True` 时整段单窗口直接判定（要求文本在 jev 上下文限制内） |
-| `window_size` / `stride` | 滑动窗口大小与步长（token 数），默认 12k / 窗口一半 |
+Repeated calls on the same text hit the cache in milliseconds — useful for RAG re-queries and document re-runs.
 
-## 算法
+## Public API
 
-```
-原文 ──Qwen3 分词──> 原文偏移词元 ──滑动窗口(12k, 50% 重叠)──> 原文区间窗口
-                                                        │
-     检测：逐词元 Noul（"是否为命名实体组成部分"，带左右邻近词元，
-           灰色区二次复检）→ 命中词元 → 双策略区间（严格连续 + 容差桥接并集）
-                                                        │
-     分型：区间内全部连续子 span → Choice（启用实体类型 + NONE）
-           → jev 并行判定，主类型过阈值 + 次要类型（≥0.25）一并返回，
-             NONE 过滤粘连/词中截断的垃圾 span
-                                                        │
-     合并：同出现位置合并为类型并集（同类型取最高概率）；
-           同主类型交叠碎片由概率最高者吸收，嵌套两侧保留
-                                                        │
-     PERSON → Choice(MALE/FEMALE/UNKNOWN) 性别判定（LRU 缓存）
+The root package deliberately exposes eight names:
+
+```python
+from jevner import (
+    Entity,          # a recognized entity: text, types, start, end
+    EntityNode,      # tree node: entity + children
+    EntityPack,      # named bundle of entity types (CORE/BIOMED/FINANCE/TECH)
+    EntityTaxonomy,  # open type system: registry + from_json + resolve
+    EntityType,      # label + description value object
+    Gender,          # MALE / FEMALE / UNKNOWN
+    JevNER,          # the recognizer
+    Person,          # Entity + gender + gender_probability
+)
 ```
 
-与 BertNER 的对应：本地 BERT token 级 BIO 预测 → jev 词元 Noul 检测 + 子 span Choice 分型；固定 n-gram 候选 → 检测区间驱动子 span；448 token 小窗口 → 12k token 窗口 + 窗口级并行；单类型输出 → 多类型按相关性排序输出；平铺列表 → 原文偏移锚定 + entity_tree 嵌套树；`Davlan/xlm-roberta-base-ner-hrl` → `baseten/mammoth-1`。
+## Design Boundaries
 
-## 测试
+JevNER owns the recognition pipeline and its contracts. It intentionally does not provide:
+
+- local model inference of any kind;
+- model hosting, fine-tuning, or weight distribution;
+- training data, annotation tooling, or evaluation harnesses;
+- UI components; or
+- re-exports of gateway SDK internals.
+
+That boundary keeps the SDK a thin, verifiable pipeline while leaving hosting and product experience to the platform.
+
+## Performance
+
+Measured end to end on the live gateway (single sample, cost-bounded; see [docs/performance-report.md](docs/performance-report.md)):
+
+| Workload | Latency | Cached re-run |
+| --- | --- | --- |
+| Short sentence | ~12 s | ~6 ms |
+| 10-sentence paragraph | ~146 s | ~6 ms |
+| 30-sentence document, 4 windows in parallel | ~157 s (1.85–5.5× speedup) | ~6 ms |
+
+The pipeline trades latency for correctness: every token is probed, every candidate span is typed with a calibrated Choice, and nested entities are all preserved. For high-frequency streaming workloads, pair JevNER with a local zero-shot tagger and reserve it for low-frequency, high-value extraction.
+
+## Development
 
 ```bash
-uv run ruff check jevner tests && uv run ruff format --check jevner tests  # 格式与静态检查
-uv run mypy jevner                          # 类型检查
-uv run python tests/test_local.py           # 本地算法单测（无网络，12 项）
-uv run python tests/test_e2e.py             # 端到端（需 TYPESAFE_API_KEY，6 项，产生计费）
-uv run python tests/test_languages.py       # 语言覆盖扫描（24 语种，产生计费）
-uv run python tests/bench_quick.py          # 精简性能实验（单进程约 8 次调用，产生计费）
+uv run ruff check jevner tests && uv run ruff format --check jevner tests  # style and static checks
+uv run mypy jevner                          # type check
+uv run python tests/test_local.py           # offline algorithm tests (12 checks)
+uv run python tests/test_e2e.py             # end to end (requires TYPESAFE_API_KEY, bills the API)
+uv run python tests/test_languages.py       # 24-language sweep (bills the API)
+uv run python tests/bench_quick.py          # compact performance experiment (bills the API)
 ```
+
+## Contributing
+
+Contributions should improve verifiable pipeline behavior: detection recall, typing precision, nesting fidelity, taxonomy validation, cache behavior, or request-budget safety. Keep the public API narrow and add independently runnable tests for new behavior.
+
+## License
+
+[MIT](LICENSE)
