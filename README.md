@@ -23,7 +23,9 @@
 
 **No training. Any language. The tree comes back in the return value.**
 
-[Why](#why-jevner) &middot; [Quick start](#quick-start) &middot; [Capabilities](#core-capabilities) &middot; [Patterns](#common-patterns) &middot; [API](#public-api) &middot; [Boundaries](#design-boundaries) &middot; [Sponsor](#sponsor)
+[Why](#why-jevner) &middot; [Installation](#installation) &middot; [Quick start](#quick-start) &middot; [Capabilities](#core-capabilities) &middot; [Models](#decision-models) &middot; [Comparisons](#ecosystem--comparisons) &middot; [API](#public-api) &middot; [Boundaries](#design-boundaries) &middot; [Sponsor](#sponsor)
+
+English | [简体中文](/vortezwohl/JevNER/blob/main/i18n/README_zh-hans.md) | [繁體中文](/vortezwohl/JevNER/blob/main/i18n/README_zh-hant.md) | [日本語](/vortezwohl/JevNER/blob/main/i18n/README_ja-jp.md) | [한국어](/vortezwohl/JevNER/blob/main/i18n/README_ko-kr.md) | [Français](/vortezwohl/JevNER/blob/main/i18n/README_fr-fr.md) | [Español](/vortezwohl/JevNER/blob/main/i18n/README_es-es.md) | [Deutsch](/vortezwohl/JevNER/blob/main/i18n/README_de-de.md) | [Português](/vortezwohl/JevNER/blob/main/i18n/README_pt-br.md)
 
 </div>
 
@@ -85,6 +87,8 @@ That is the complete first loop: no model download, no fine-tuning, no post-proc
 
 > [!TIP]
 > The gateway routes several System One models. The default is `baseten/mammoth-1`; switch any time with `JevNER(model_name="jev-latest")`.
+
+> Calling from TypeScript, Go, or plain `curl`? The wire protocol is plain JSON REST — see [`examples/`](examples/README.md).
 
 ## Core Capabilities
 
@@ -166,6 +170,24 @@ for node in ner(doc, with_gender=False):
 ```
 
 Repeated calls on the same text hit the cache in milliseconds — useful for RAG re-queries and document re-runs.
+
+## Decision Models
+
+JevNER runs on any System One decision model registered on the gateway — models that answer typed questions (Noul yes/no, Choice selection) with calibrated probabilities instead of generating text. Default `baseten/mammoth-1`; `jev-latest` and 20+ more work with one argument:
+
+| | |
+| --- | --- |
+| Verified for NER | `baseten/mammoth-1` (default), `jev-latest`, `jev-1.13.0`, `jev-1.14.0` |
+| Cheapest | `baseten/joey-1`, `respan/span-01-lite`, `perplexity/pplx-decider-flash-v1.2` — from $0.01/M input tokens |
+| Also available | Cloudflare Clef family, Nace.AI Drex, LiquidAI d1, Microsoft Decision-1, Upstage Solar Decide, Inception Mercury Decide, OpenAI GPT-6 Luna Decisions, `jaredpalmer/kev-4b`, and more |
+
+Full catalog with prices and per-model caveats: [Supported decision models](docs/models.md).
+
+## Ecosystem & Comparisons
+
+JevNER is a reference application of the decision-model (System One) movement — the ecosystem of models and engines that return typed, calibrated judgments instead of prose: the TypeSafe **Jev** family, [EasyJev](https://www.easyjev.online/)'s aggregated gateway, open engines like [laya](https://github.com/NandhaKishorM/laya) (non-autoregressive decision engine, 100+ languages) and [kev](https://github.com/jaredpalmer/kev) (open decision models on Qwen), and adapters like [AnyJev](https://github.com/nokia-applied-research/AnyJev). Map: [the decision-model ecosystem](docs/ecosystem.md).
+
+Choosing an NER stack? [JevNER vs GLiNER vs spaCy vs hosted NER APIs](docs/alternatives.md) — an honest comparison, including when a local [GLiNER](https://github.com/urchade/GLiNER) checkpoint or a [spaCy](https://github.com/explosion/spaCy) pipeline is the better call.
 
 ## Public API
 
