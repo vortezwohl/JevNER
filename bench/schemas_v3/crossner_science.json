@@ -1,0 +1,119 @@
+{
+  "types": {
+    "academicjournal": {
+      "description": "an academic journal",
+      "examples": [
+        "Nature",
+        "Physical Review Letters"
+      ]
+    },
+    "astronomicalobject": {
+      "description": "a planet, star, galaxy, comet or other celestial object",
+      "examples": [
+        "Mars",
+        "Andromeda Galaxy"
+      ]
+    },
+    "award": {
+      "description": "a named award, prize or honour",
+      "examples": [
+        "Nobel Prize in Physics",
+        "Grammy Award"
+      ]
+    },
+    "chemicalcompound": {
+      "description": "a chemical compound or molecule",
+      "examples": [
+        "glucose",
+        "sodium chloride"
+      ]
+    },
+    "chemicalelement": {
+      "description": "a chemical element",
+      "examples": [
+        "oxygen",
+        "iron"
+      ]
+    },
+    "country": {
+      "description": "a country or nation state, including historical ones",
+      "examples": [
+        "France",
+        "Soviet Union"
+      ]
+    },
+    "discipline": {
+      "description": "an academic discipline",
+      "examples": [
+        "physics",
+        "biochemistry"
+      ]
+    },
+    "enzyme": {
+      "description": "an enzyme",
+      "examples": [
+        "lactase",
+        "DNA polymerase"
+      ]
+    },
+    "event": {
+      "description": "a named event such as a war, festival, conference or ceremony",
+      "examples": [
+        "World War II",
+        "Woodstock"
+      ]
+    },
+    "location": {
+      "description": "a geographic place that is not a country: city, region, province, river, mountain, constituency",
+      "examples": [
+        "Paris",
+        "Ontario"
+      ]
+    },
+    "misc": {
+      "description": "any other named entity that fits none of the types above, e.g. nationality, language, religion, named object or work",
+      "examples": [
+        "German",
+        "Buddhism"
+      ]
+    },
+    "organisation": {
+      "description": "an organisation, company, agency, court, army or institution that fits no more specific type",
+      "examples": [
+        "Red Cross",
+        "Google"
+      ]
+    },
+    "person": {
+      "description": "a person who does not fit a more specific role type listed here",
+      "examples": [
+        "John Smith"
+      ]
+    },
+    "protein": {
+      "description": "a protein that is not an enzyme",
+      "examples": [
+        "hemoglobin",
+        "insulin"
+      ]
+    },
+    "scientist": {
+      "description": "a person known as a scientist",
+      "examples": [
+        "Marie Curie"
+      ]
+    },
+    "theory": {
+      "description": "a named scientific theory, law or principle",
+      "examples": [
+        "general relativity"
+      ]
+    },
+    "university": {
+      "description": "a university or college",
+      "examples": [
+        "Stanford University"
+      ]
+    }
+  }
+}

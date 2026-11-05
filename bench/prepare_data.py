@@ -1,22 +1,24 @@
-"""One-time benchmark data preparation for the JevNER frozen baseline.
+"""Benchmark data preparation: 12 public NER datasets, frozen samples.
 
-Downloads three public Chinese NER datasets (MSRA / Resume / CLUENER)
-from HuggingFace parquet mirrors, decodes them into explicit-offset
-JSONL items, and freezes fixed-seed dev/test samples into bench/sets/.
-Also freezes the 24-language sweep cases from tests/test_languages.py
-as a multilingual recall suite.
+Datasets: MSRA, Resume, CLUENER, Weibo, CoNLL03, WNUT17, MIT-Restaurant,
+and 5 CrossNER domains (ai/literature/music/politics/science) — the
+standard zero-shot Chinese/English NER benchmark mix.
 
-Item format (one JSON object per line)::
+Pipeline per dataset:
+1. Download the public HuggingFace mirror (cached under bench/data/,
+   gitignored; each dataset keeps its own license).
+2. Decode into explicit-offset JSONL items
+   {"id", "text", "entities": [[surface, label, start, end], ...]}
+   with text[start:end] == surface asserted.
+3. Clean (strip, drop -DOCSTART-, cap 510 chars — BERT-style baseline
+   input limit, kept for cross-pipeline comparability).
+4. Freeze fixed-seed samples: test 200 (random.Random(2026)) and dev 50
+   (random.Random(2027)) drawn from DISJOINT source splits (test sample
+   from the dataset's test split where one exists), so dev-set tuning
+   never leaks into final numbers.
 
-    {"id": "msra-123", "text": "...", "entities": [["北京", "loc", 0, 2], ...]}
-
-entity tuples are [surface, label, start, end] with end exclusive and
-text[start:end] == surface (asserted during preparation).
-
-Dev/test come from disjoint source splits (test pool from the dataset's
-test split where available) so dev-set tuning never leaks into the
-final numbers. Re-run to re-freeze; changing --seed changes the frozen
-samples and invalidates comparability with previous baselines.
+Label conventions per dataset live in bench/schemas_v3/<name>.json
+(annotation-guideline-derived descriptions; committed).
 
 Usage:
     uv run python bench/prepare_data.py [--test 200] [--dev 50] [--seed 2026]
@@ -38,25 +40,50 @@ import pandas as pd
 HERE = Path(__file__).parent
 DATA = HERE / "data"
 SETS = HERE / "sets"
-MAX_CHARS = 300  # benchmark sentences are short; cap cost per item
+SCHEMAS_V3 = HERE / "schemas_v3"
+MAX_CHARS = 510  # BERT-style baselines cannot read longer inputs
 
-# Public HuggingFace parquet mirrors of the standard Chinese NER datasets.
+# Public HuggingFace endpoints: (dataset name -> {pool: URL}).
 SOURCES: dict[str, dict[str, str]] = {
     "msra": {
-        "dev_pool": "PassbyGrocer/msra-ner/data/train-00000-of-00001.parquet",
-        "test_pool": "PassbyGrocer/msra-ner/data/test-00000-of-00001.parquet",
+        "dev_pool": "https://huggingface.co/datasets/PassbyGrocer/msra-ner/resolve/main/data/train-00000-of-00001.parquet",
+        "test_pool": "https://huggingface.co/datasets/PassbyGrocer/msra-ner/resolve/main/data/test-00000-of-00001.parquet",
     },
     "resume": {
-        "dev_pool": "PassbyGrocer/resume-ner/data/validation-00000-of-00001.parquet",
-        "test_pool": "PassbyGrocer/resume-ner/data/test-00000-of-00001.parquet",
+        "dev_pool": "https://huggingface.co/datasets/PassbyGrocer/resume-ner/resolve/main/data/validation-00000-of-00001.parquet",
+        "test_pool": "https://huggingface.co/datasets/PassbyGrocer/resume-ner/resolve/main/data/test-00000-of-00001.parquet",
+    },
+    "weibo": {
+        "dev_pool": "https://huggingface.co/datasets/PassbyGrocer/weibo-ner/resolve/main/data/validation-00000-of-00001.parquet",
+        "test_pool": "https://huggingface.co/datasets/PassbyGrocer/weibo-ner/resolve/main/data/test-00000-of-00001.parquet",
     },
     "cluener": {
-        "dev_pool": "xusenlin/clue-ner/data/train-00000-of-00001-39fc4e004146ece2.parquet",
-        "test_pool": "xusenlin/clue-ner/data/validation-00000-of-00001-bc5663be3b7ff2cd.parquet",
+        "dev_pool": "https://huggingface.co/datasets/xusenlin/clue-ner/resolve/main/data/train-00000-of-00001-39fc4e004146ece2.parquet",
+        "test_pool": "https://huggingface.co/datasets/xusenlin/clue-ner/resolve/main/data/validation-00000-of-00001-bc5663be3b7ff2cd.parquet",
+    },
+    "conll": {
+        "dev_pool": "https://huggingface.co/datasets/tomaarsen/conll2003/resolve/main/data/validation-00000-of-00001.parquet",
+        "test_pool": "https://huggingface.co/datasets/tomaarsen/conll2003/resolve/main/data/test-00000-of-00001.parquet",
+    },
+    "wnut": {
+        "dev_pool": "https://huggingface.co/datasets/tner/wnut2017/resolve/main/dataset/valid.json",
+        "test_pool": "https://huggingface.co/datasets/tner/wnut2017/resolve/main/dataset/test.json",
+        "labels": "https://huggingface.co/datasets/tner/wnut2017/resolve/main/dataset/label.json",
+    },
+    "mitres": {
+        "dev_pool": "https://huggingface.co/datasets/tner/mit_restaurant/resolve/main/dataset/valid.json",
+        "test_pool": "https://huggingface.co/datasets/tner/mit_restaurant/resolve/main/dataset/test.json",
+        "labels": "https://huggingface.co/datasets/tner/mit_restaurant/resolve/main/dataset/label.json",
     },
 }
+CROSSNER_DOMAINS = ("ai", "literature", "music", "politics", "science")
+for dom in CROSSNER_DOMAINS:
+    SOURCES[f"crossner_{dom}"] = {
+        "dev_pool": f"https://huggingface.co/api/datasets/DFKI-SLT/cross_ner/parquet/{dom}/validation/0.parquet",
+        "test_pool": f"https://huggingface.co/api/datasets/DFKI-SLT/cross_ner/parquet/{dom}/test/0.parquet",
+    }
 
-# Tag id -> label name for the BIO-encoded parquet datasets.
+# Tag id -> tag name for the BIO-encoded parquet datasets.
 MSRA_TAGS = ["O", "B-LOC", "I-LOC", "B-ORG", "I-ORG", "B-PER", "I-PER"]
 RESUME_TAGS = [
     "O",
@@ -77,170 +104,96 @@ RESUME_TAGS = [
     "B-TITLE",
     "I-TITLE",
 ]
+WEIBO_TAGS = [
+    "O",
+    "B-GPE.NAM",
+    "I-GPE.NAM",
+    "B-GPE.NOM",
+    "I-GPE.NOM",
+    "B-LOC.NAM",
+    "I-LOC.NAM",
+    "B-LOC.NOM",
+    "I-LOC.NOM",
+    "B-ORG.NAM",
+    "I-ORG.NAM",
+    "B-ORG.NOM",
+    "I-ORG.NOM",
+    "B-PER.NAM",
+    "I-PER.NAM",
+    "B-PER.NOM",
+    "I-PER.NOM",
+]
+CONLL_TAGS = ["O", "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC", "B-MISC", "I-MISC"]
+CROSSNER_TYPES = [
+    "academicjournal",
+    "album",
+    "algorithm",
+    "astronomicalobject",
+    "award",
+    "band",
+    "book",
+    "chemicalcompound",
+    "chemicalelement",
+    "conference",
+    "country",
+    "discipline",
+    "election",
+    "enzyme",
+    "event",
+    "field",
+    "literarygenre",
+    "location",
+    "magazine",
+    "metrics",
+    "misc",
+    "musicalartist",
+    "musicalinstrument",
+    "musicgenre",
+    "organisation",
+    "person",
+    "politicalparty",
+    "politician",
+    "product",
+    "programlang",
+    "protein",
+    "researcher",
+    "scientist",
+    "song",
+    "task",
+    "theory",
+    "university",
+    "writer",
+]
+CROSSNER_TAGS = ["O"] + [f"{p}-{t}" for t in CROSSNER_TYPES for p in ("B", "I")]
 
-# Model-facing type specs per dataset (English prompts resolve most
-# stably; example text stays in its original language). Counters target
-# the confusions observed in the 2026-11-05 baseline run.
-SCHEMAS: dict[str, dict[str, dict]] = {
-    "msra": {
-        "per": {
-            "description": "A specific person's name.",
-            "examples": ["张伟", "温家宝"],
-            "counter_examples": ["职务称谓如「总书记」「教授」（不是人名）"],
-            "min_chars": 2,
-        },
-        "loc": {
-            "description": "A location name: a country, province, city, or district.",
-            "examples": ["北京", "长江流域"],
-            "counter_examples": ["机构名如「北京大学」（那是 org）"],
-            "min_chars": 2,
-        },
-        "org": {
-            "description": "An organization name: a company, institution, agency, or school.",
-            "examples": ["北京大学", "信息产业部"],
-            "counter_examples": ["地名如「北京」（那是 loc）"],
-            "min_chars": 2,
-        },
-    },
-    "resume": {
-        "name": {
-            "description": "A person's name.",
-            "examples": ["邵辉"],
-            "min_chars": 2,
-        },
-        "cont": {
-            "description": "A nationality or continent.",
-            "examples": ["中国", "美国", "欧美"],
-            "counter_examples": ["民族如「汉族」（那是 race）", "地名如「北京」（那是 loc）"],
-        },
-        "edu": {
-            "description": "An educational institution: a school or university name.",
-            "examples": ["北京大学", "浙江大学"],
-            "counter_examples": ["公司名如「阿里巴巴」（那是 org）"],
-            "min_chars": 2,
-        },
-        "loc": {
-            "description": "A location name: a place, city, or region.",
-            "examples": ["北京", "上海"],
-            "counter_examples": [
-                "国籍如「中国」（那是 cont）",
-                "学校名、公司名、工作单位都不是 loc",
-            ],
-            "min_chars": 2,
-        },
-        "org": {
-            "description": "An organization: a company, government body, or association.",
-            "examples": ["阿里巴巴", "中央电视台"],
-            "counter_examples": ["大学与学校名（那是 edu）"],
-            "min_chars": 2,
-        },
-        "pro": {
-            "description": "A professional field or qualification studied or held.",
-            "examples": ["软件工程", "会计", "市场营销"],
-            "counter_examples": ["职位头衔如「总经理」「工程师」（那是 title）"],
-        },
-        "race": {
-            "description": "An ethnicity.",
-            "examples": ["汉族", "回族", "蒙古族"],
-            "counter_examples": ["国籍如「中国」（那是 cont）"],
-        },
-        "title": {
-            "description": "A job title or position held at an organization.",
-            "examples": ["总经理", "董事长", "工程师"],
-            "counter_examples": ["专业领域如「软件工程」（那是 pro）"],
-        },
-    },
-    "cluener": {
-        "address": {
-            "description": "A street or postal address.",
-            "examples": ["北京市朝阳区望京街10号"],
-            "counter_examples": ["景点名如「故宫」（那是 scene）", "城市名单独出现时不是 address"],
-        },
-        "book": {
-            "description": "A book title.",
-            "examples": ["红楼梦", "三体"],
-            "counter_examples": ["影视作品名（那是 movie）"],
-            "include_brackets": True,
-        },
-        "company": {
-            "description": "A company name.",
-            "examples": ["腾讯", "字节跳动"],
-            "counter_examples": [
-                "政府机构（那是 government）",
-                "学校、社团等（那是 organization）",
-            ],
-            "min_chars": 2,
-        },
-        "game": {
-            "description": "A game name.",
-            "examples": ["王者荣耀", "原神"],
-        },
-        "government": {
-            "description": "A government body, agency, or public institution.",
-            "examples": ["国家发改委", "教育部"],
-            "counter_examples": ["公司名（那是 company）"],
-        },
-        "job": {
-            "description": "A job position or profession held.",
-            "examples": ["产品经理", "教师"],
-            "counter_examples": ["职级头衔如「董事长」（那是 position）"],
-        },
-        "movie": {
-            "description": "A movie or film title.",
-            "examples": ["流浪地球", "泰坦尼克号"],
-            "counter_examples": ["书名（那是 book）"],
-            "include_brackets": True,
-        },
-        "name": {
-            "description": "A person's name.",
-            "examples": ["王小婷"],
-            "min_chars": 2,
-        },
-        "organization": {
-            "description": (
-                "An organization other than a company or government body: "
-                "an NGO, university, hospital, or club."
-            ),
-            "examples": ["北京航空航天大学", "红十字会"],
-            "counter_examples": ["公司名（那是 company）", "政府机构（那是 government）"],
-        },
-        "position": {
-            "description": "A job title or rank.",
-            "examples": ["董事长", "高级工程师"],
-            "counter_examples": ["职业品类如「产品经理」（那是 job）"],
-        },
-        "scene": {
-            "description": "A scenic spot, tourist attraction, or venue.",
-            "examples": ["故宫", "迪士尼乐园"],
-            "counter_examples": ["街道地址（那是 address）"],
-            "min_chars": 2,
-        },
-    },
+BIO_TAGS: dict[str, list[str]] = {
+    "msra": MSRA_TAGS,
+    "resume": RESUME_TAGS,
+    "weibo": WEIBO_TAGS,
+    "conll": CONLL_TAGS,
+    **{f"crossner_{dom}": CROSSNER_TAGS for dom in CROSSNER_DOMAINS},
 }
+DATASET_ORDER = list(BIO_TAGS) + ["cluener", "wnut", "mitres"]
 
 
-def download(rel: str) -> Path:
-    """Fetch a HuggingFace parquet into bench/data/ (cached; ~30 MB total).
+def download(url: str) -> Path:
+    """Fetch a dataset file into bench/data/ (cached across runs).
 
-    Args:
-        rel: Full repo-relative path, e.g.
-            "PassbyGrocer/msra-ner/data/train-00000-of-00001.parquet".
-
-    Returns:
-        The local parquet path under bench/data/.
+    Cache keys derive from the FULL path (scheme/host/resolve/main
+    stripped): identical file names across dataset repos must never
+    collide — a shared cache name once made one dataset decode
+    another's file.
     """
-    parts = rel.split("/")
-    url = (
-        f"https://huggingface.co/datasets/{parts[0]}/{parts[1]}/resolve/main/{'/'.join(parts[2:])}"
-    )
+    parts = [
+        p for p in url.split("/") if p not in ("https:", "", "huggingface.co", "resolve", "main")
+    ]
     target = DATA / "_".join(parts)
     if target.exists():
-        print(f"  cached: {target.name}")
         return target
-    print(f"  downloading: {url}")
+    print(f"  downloading: {'/'.join(parts[-3:])}")
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(url, timeout=120) as resp, open(target, "wb") as out:
+            with urllib.request.urlopen(url, timeout=180) as resp, open(target, "wb") as out:
                 out.write(resp.read())
             return target
         except Exception as exc:  # noqa: BLE001 - one-time data prep, report and retry
@@ -251,12 +204,71 @@ def download(rel: str) -> Path:
 
 
 def norm_label(raw: str) -> str:
-    """Normalize a raw tag to a lowercase schema label (loc / per / org ...)."""
+    """Normalize a raw tag to a lowercase schema label (per, gpe_nam, ...)."""
     return re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
 
 
-def bio_to_items(name: str, df: pd.DataFrame, tags: list[str], sep: str) -> list[dict]:
+def tokens_to_entities(
+    text: str, offsets: list[tuple[int, int]], labels: list[str]
+) -> list[list[object]]:
+    """Decode a BIO tag sequence over token offsets into entity tuples.
+
+    cur holds the RAW tag type; normalization happens at emission, so the
+    I- continuation check compares like with like.
+    """
+    entities: list[list[object]] = []
+    cur: list[object] | None = None
+    for (s, e), tag in zip(offsets, labels, strict=True):
+        if tag.startswith("B-") or (tag.startswith("I-") and (cur is None or cur[0] != tag[2:])):
+            if cur:
+                entities.append(cur)
+            cur = [tag[2:], s, e]
+        elif tag.startswith("I-"):
+            cur[2] = e
+        else:
+            if cur:
+                entities.append(cur)
+            cur = None
+    if cur:
+        entities.append(cur)
+    return [[text[s:e], norm_label(lab), s, e] for lab, s, e in entities]
+
+
+def parquet_tags(path: Path, column: str, fallback: list[str]) -> list[str]:
+    """Read a BIO tag-name table from the parquet's HuggingFace metadata.
+
+    Datasets-ETL parquet files embed the ClassLabel names under
+    schema.metadata[b"huggingface"]; deriving the table from the file
+    itself removes every hardcoded-mapping risk. Falls back to the
+    static table when metadata is absent.
+
+    Args:
+        path: Local parquet file.
+        column: Tag column name (ner_tags).
+        fallback: Static tag table used when no metadata exists.
+
+    Returns:
+        Tag id -> tag name list.
+    """
+    import pyarrow.parquet as pq
+
+    schema = pq.read_schema(path)
+    blob = schema.metadata.get(b"huggingface") if schema.metadata else None
+    if blob:
+        info = json.loads(blob.decode())
+        feat = info.get("info", {}).get("features", {}).get(column, {})
+        names = feat.get("feature", {}).get("names") or feat.get("names")
+        if names:
+            return list(names)
+    return fallback
+
+
+def bio_to_items(
+    name: str, df: pd.DataFrame, tags: list[str], sep: str, path: Path | None = None
+) -> list[dict]:
     """Decode BIO rows (tokens + ner_tag ids) into explicit-offset items."""
+    if path is not None:
+        tags = parquet_tags(path, "ner_tags", tags)
     items: list[dict] = []
     for i, row in enumerate(df.itertuples()):
         tokens = list(row.tokens)
@@ -268,32 +280,10 @@ def bio_to_items(name: str, df: pd.DataFrame, tags: list[str], sep: str) -> list
                 text += sep
             offsets.append((len(text), len(text) + len(tok)))
             text += tok
-        entities: list[list[object]] = []
-        cur: list[object] | None = None
-        for (s, e), tag in zip(offsets, labels, strict=True):
-            # cur stores the RAW tag type; normalization happens at emission,
-            # so the I- continuation check compares like with like.
-            if tag.startswith("B-") or (
-                tag.startswith("I-") and (cur is None or cur[0] != tag[2:])
-            ):
-                if cur:
-                    entities.append(cur)
-                cur = [tag[2:], s, e]
-            elif tag.startswith("I-"):
-                cur[2] = e
-            else:
-                if cur:
-                    entities.append(cur)
-                cur = None
-        if cur:
-            entities.append(cur)
-        items.append(
-            {
-                "id": f"{name}-{i}",
-                "text": text,
-                "entities": [[text[s:e], norm_label(lab), s, e] for lab, s, e in entities],
-            }
-        )
+        entities = tokens_to_entities(text, offsets, labels)
+        for surface, _lab, s, e in entities:
+            assert text[s:e] == surface, f"offset mismatch in {name}-{i}"
+        items.append({"id": f"{name}-{i}", "text": text, "entities": entities})
     return items
 
 
@@ -313,8 +303,46 @@ def cluener_to_items(name: str, df: pd.DataFrame) -> list[dict]:
     return items
 
 
+def tner_to_items(name: str, path: Path, label_path: Path) -> list[dict]:
+    """Decode tner json rows ({"tokens", "tags"} + id->tag map) into items."""
+    id2label = {v: k for k, v in json.loads(label_path.read_text(encoding="utf-8")).items()}
+    items: list[dict] = []
+    for i, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        tokens = list(row["tokens"])
+        labels = [id2label[t] for t in row["tags"]]
+        text = ""
+        offsets: list[tuple[int, int]] = []
+        for j, tok in enumerate(tokens):
+            if j:
+                text += " "
+            offsets.append((len(text), len(text) + len(tok)))
+            text += tok
+        entities = tokens_to_entities(text, offsets, labels)
+        for surface, _lab, s, e in entities:
+            assert text[s:e] == surface, f"offset mismatch in {name}-{i}"
+        items.append({"id": f"{name}-{i}", "text": text, "entities": entities})
+    return items
+
+
+def load_pool(name: str, pool: str) -> list[dict]:
+    """Decode one source pool for a dataset (downloads as needed)."""
+    urls = SOURCES[name]
+    if name == "cluener":
+        return cluener_to_items(name, pd.read_parquet(download(urls[pool])))
+    if name.startswith("crossner_"):
+        path = download(urls[pool])
+        return bio_to_items(name, pd.read_parquet(path), CROSSNER_TAGS, " ", path)
+    if name in ("wnut", "mitres"):
+        return tner_to_items(name, download(urls[pool]), download(urls["labels"]))
+    path = download(urls[pool])
+    return bio_to_items(name, pd.read_parquet(path), BIO_TAGS[name], "", path)
+
+
 def clean(items: list[dict]) -> list[dict]:
-    """Keep meaningful, length-capped sentences."""
+    """Keep meaningful, length-capped sentences (baseline input limit)."""
     return [
         it
         for it in items
@@ -352,46 +380,39 @@ def main() -> None:
     DATA.mkdir(parents=True, exist_ok=True)
     SETS.mkdir(parents=True, exist_ok=True)
 
-    meta: dict[str, dict] = {}
-    for name, pools in SOURCES.items():
+    total_ent = 0
+    for name in DATASET_ORDER:
         print(f"[{name}]")
-        if name == "cluener":
-            dev_pool = cluener_to_items(f"{name}_dev", pd.read_parquet(download(pools["dev_pool"])))
-            test_pool = cluener_to_items(name, pd.read_parquet(download(pools["test_pool"])))
-            tags_used = sorted({e[1] for it in test_pool for e in it["entities"]})
-        else:
-            tags = MSRA_TAGS if name == "msra" else RESUME_TAGS
-            sep = ""  # both Chinese datasets are character-tokenized (no separator)
-            dev_pool = bio_to_items(
-                f"{name}_dev", pd.read_parquet(download(pools["dev_pool"])), tags, sep
-            )
-            test_pool = bio_to_items(name, pd.read_parquet(download(pools["test_pool"])), tags, sep)
-            tags_used = sorted({e[1] for it in test_pool for e in it["entities"]})
-        dev_items = clean(dev_pool)
-        test_items = clean(test_pool)
+        # Sampling order matters for reproducibility: test pool (seed) first,
+        # then dev pool (seed+1); pools come from disjoint source splits.
+        test_items = clean(load_pool(name, "test_pool"))
+        dev_items = clean(load_pool(name, "dev_pool"))
         test = random.Random(args.seed).sample(test_items, min(args.test, len(test_items)))
         dev = random.Random(args.seed + 1).sample(dev_items, min(args.dev, len(dev_items)))
         write_jsonl(SETS / f"{name}_test.jsonl", test)
         write_jsonl(SETS / f"{name}_dev.jsonl", dev)
+        labels = sorted({e[1] for it in test for e in it["entities"]})
         n_ent = sum(len(it["entities"]) for it in test)
+        total_ent += n_ent
         print(
-            f"  test={len(test)} ({n_ent} entities, {len(tags_used)} types)  "
-            f"dev={len(dev)}  types={tags_used}"
+            f"  test={len(test)} ({n_ent} entities, {len(labels)} types)  dev={len(dev)}  "
+            f"types={labels}"
         )
-        meta[name] = {
-            "types": SCHEMAS[name],
-            "source": {
-                k: f"https://huggingface.co/datasets/{v.split('/')[0]}/{v.split('/')[1]}"
-                for k, v in pools.items()
-            },
-            "seed": args.seed,
-            "test_size": len(test),
-            "dev_size": len(dev),
-            "max_chars": MAX_CHARS,
-        }
 
     languages = load_language_cases()
     write_jsonl(SETS / "languages.jsonl", languages)
+
+    meta: dict[str, dict] = {}
+    for name in DATASET_ORDER:
+        schema = json.loads((SCHEMAS_V3 / f"{name}.json").read_text(encoding="utf-8"))
+        meta[name] = {
+            "types": schema["types"],
+            "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+            "seed": args.seed,
+            "test_size": args.test,
+            "dev_size": args.dev,
+            "max_chars": MAX_CHARS,
+        }
     meta["languages"] = {
         "source": "tests/test_languages.py LANGUAGE_CASES (frozen)",
         "cases": len(languages),
@@ -400,6 +421,7 @@ def main() -> None:
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(f"[languages] cases={len(languages)}")
+    print(f"total test entities: {total_ent}")
     print("Frozen sets written to bench/sets/.")
 
 

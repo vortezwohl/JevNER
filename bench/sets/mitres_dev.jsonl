@@ -1,0 +1,50 @@
+{"id": "mitres-110", "text": "are there any arbys in this area", "entities": [["arbys", "restaurant_name", 14, 19], ["in this area", "location", 20, 32]]}
+{"id": "mitres-475", "text": "bbq ribs and beer sports bar", "entities": [["bbq ribs", "dish", 0, 8], ["beer", "dish", 13, 17], ["sports bar", "amenity", 18, 28]]}
+{"id": "mitres-81", "text": "anything good to eat within 10 miles", "entities": [["good", "rating", 9, 13], ["within 10 miles", "location", 21, 36]]}
+{"id": "mitres-13", "text": "adress of the nearest cracker barrel", "entities": [["nearest", "location", 14, 21], ["cracker barrel", "restaurant_name", 22, 36]]}
+{"id": "mitres-670", "text": "can you find a steak place with outdoor seating", "entities": [["steak", "cuisine", 15, 20], ["outdoor seating", "amenity", 32, 47]]}
+{"id": "mitres-330", "text": "are there any places with early bird specials", "entities": [["early bird specials", "amenity", 26, 45]]}
+{"id": "mitres-415", "text": "are there any sushi places in town", "entities": [["sushi", "cuisine", 14, 19], ["in town", "location", 27, 34]]}
+{"id": "mitres-640", "text": "can you find a pizza place", "entities": [["pizza", "dish", 15, 20]]}
+{"id": "mitres-187", "text": "are there any fast food restaurants along my route", "entities": [["fast food", "cuisine", 14, 23], ["along my route", "location", 36, 50]]}
+{"id": "mitres-408", "text": "are there any starbucks around", "entities": [["starbucks", "restaurant_name", 14, 23], ["around", "location", 24, 30]]}
+{"id": "mitres-184", "text": "are there any famous or historical restaurants in the area", "entities": [["famous", "rating", 14, 20], ["historical", "amenity", 24, 34], ["area", "location", 54, 58]]}
+{"id": "mitres-356", "text": "are there any restaurants near by", "entities": [["near by", "location", 26, 33]]}
+{"id": "mitres-609", "text": "can you dine in the bar at cjs gourmet pizza", "entities": [["dine in the bar", "amenity", 8, 23], ["cjs gourmet pizza", "restaurant_name", 27, 44]]}
+{"id": "mitres-183", "text": "are there any family style steakhouses within a mile of here", "entities": [["family style", "amenity", 14, 26], ["steakhouses", "cuisine", 27, 38], ["within a mile of here", "location", 39, 60]]}
+{"id": "mitres-283", "text": "are there any mexican restaurants near port washington new york", "entities": [["mexican", "cuisine", 14, 21], ["near port washington new york", "location", 34, 63]]}
+{"id": "mitres-295", "text": "are there any outdoor eatery on battery march", "entities": [["outdoor", "amenity", 14, 21], ["eatery", "cuisine", 22, 28], ["battery march", "location", 32, 45]]}
+{"id": "mitres-703", "text": "can you find me a ethiopian place where the service is rated high", "entities": [["ethiopian", "cuisine", 18, 27], ["rated high", "rating", 55, 65]]}
+{"id": "mitres-624", "text": "can you find a fast food place that serves healthy shakes", "entities": [["fast food", "cuisine", 15, 24], ["healthy shakes", "dish", 43, 57]]}
+{"id": "mitres-78", "text": "any unique foods here", "entities": [["unique", "cuisine", 4, 10]]}
+{"id": "mitres-654", "text": "can you find a place with moderately priced entrees such as kookoo cafe", "entities": [["moderately", "price", 26, 36], ["kookoo cafe", "restaurant_name", 60, 71]]}
+{"id": "mitres-676", "text": "can you find an applebees restaurant within 5 miles", "entities": [["applebees", "restaurant_name", 16, 25], ["within 5 miles", "location", 37, 51]]}
+{"id": "mitres-349", "text": "are there any restaurants in inman square thats open after 9 pm 7 days a week", "entities": [["inman square", "location", 29, 41], ["open after 9 pm 7 days a week", "hours", 48, 77]]}
+{"id": "mitres-309", "text": "are there any place that is open after 12 p", "entities": [["open after 12 p", "hours", 28, 43]]}
+{"id": "mitres-68", "text": "any restaurants around four miles from here with private rooms", "entities": [["around four miles from here", "location", 16, 43], ["private rooms", "amenity", 49, 62]]}
+{"id": "mitres-260", "text": "are there any kid friendly restaurants near the park", "entities": [["kid friendly", "amenity", 14, 26], ["near the park", "location", 39, 52]]}
+{"id": "mitres-669", "text": "can you find a romantic restaurant that has a dress code", "entities": [["romantic", "amenity", 15, 23], ["dress code", "amenity", 46, 56]]}
+{"id": "mitres-261", "text": "are there any kid friendly restaurants nearby that serve sake", "entities": [["kid friendly", "amenity", 14, 26], ["nearby", "location", 39, 45], ["sake", "dish", 57, 61]]}
+{"id": "mitres-435", "text": "are there any vegetarian indian places nearby", "entities": [["vegetarian indian", "cuisine", 14, 31], ["nearby", "location", 39, 45]]}
+{"id": "mitres-518", "text": "can i bring my stroller", "entities": [["bring", "amenity", 6, 11], ["stroller", "amenity", 15, 23]]}
+{"id": "mitres-233", "text": "are there any hip tea places nearby upscale would be nice", "entities": [["hip", "dish", 14, 17], ["tea", "cuisine", 18, 21], ["nearby", "location", 29, 35], ["upscale", "price", 36, 43]]}
+{"id": "mitres-160", "text": "are there any delis nearby", "entities": [["delis", "cuisine", 14, 19], ["nearby", "location", 20, 26]]}
+{"id": "mitres-751", "text": "can you find me restaurants in the area", "entities": [["in the area", "location", 28, 39]]}
+{"id": "mitres-345", "text": "are there any restaurants around here that give senor discounts", "entities": [["around here", "location", 26, 37], ["senor discounts", "amenity", 48, 63]]}
+{"id": "mitres-354", "text": "are there any restaurants in this city with a dining room that have a great view of the night skyline", "entities": [["in this city", "location", 26, 38], ["great view of the night skyline", "amenity", 70, 101]]}
+{"id": "mitres-224", "text": "are there any halal restaurants in natick open around 8 pm", "entities": [["halal", "cuisine", 14, 19], ["natick", "location", 35, 41], ["open around 8 pm", "hours", 42, 58]]}
+{"id": "mitres-407", "text": "are there any specialties being offered at any nearby restaurants", "entities": []}
+{"id": "mitres-464", "text": "at what time does johnny rockets open", "entities": [["johnny rockets", "restaurant_name", 18, 32], ["open", "hours", 33, 37]]}
+{"id": "mitres-390", "text": "are there any restaurants within a mile of here", "entities": [["within a mile", "location", 26, 39]]}
+{"id": "mitres-167", "text": "are there any diners nearby", "entities": [["diners", "cuisine", 14, 20], ["nearby", "location", 21, 27]]}
+{"id": "mitres-479", "text": "best rated donuts in town", "entities": [["best rated", "rating", 0, 10], ["donuts", "dish", 11, 17], ["in town", "location", 18, 25]]}
+{"id": "mitres-382", "text": "are there any restaurants where kids can eat for free", "entities": [["kids can eat", "amenity", 32, 44], ["free", "price", 49, 53]]}
+{"id": "mitres-754", "text": "can you find me some kosher food that is romantic", "entities": [["kosher", "cuisine", 21, 27], ["romantic", "amenity", 41, 49]]}
+{"id": "mitres-322", "text": "are there any places that serve bagels and have beer along this route", "entities": [["bagels", "dish", 32, 38], ["beer", "amenity", 48, 52], ["along this route", "location", 53, 69]]}
+{"id": "mitres-628", "text": "can you find a greek restaurant thats open 24 hours", "entities": [["greek", "cuisine", 15, 20], ["24 hours", "hours", 43, 51]]}
+{"id": "mitres-127", "text": "are there any burger kings within 5 miles of here", "entities": [["burger kings", "restaurant_name", 14, 26], ["within 5 miles", "location", 27, 41]]}
+{"id": "mitres-196", "text": "are there any fine dining restaurants that i can take a date to without a reservation", "entities": [["fine dining", "amenity", 14, 25], ["without a reservation", "amenity", 64, 85]]}
+{"id": "mitres-63", "text": "any places in harvard square where i can get potato pie and see some celebrities", "entities": [["harvard square", "location", 14, 28], ["potato pie", "dish", 45, 55], ["see some celebrities", "amenity", 60, 80]]}
+{"id": "mitres-333", "text": "are there any places within 5 miles that serve a dish this town is known for", "entities": [["within 5 miles", "location", 21, 35], ["dish this town is known for", "dish", 49, 76]]}
+{"id": "mitres-487", "text": "brunch", "entities": [["brunch", "cuisine", 0, 6]]}
+{"id": "mitres-264", "text": "are there any kid friendly pizza parlors around here", "entities": [["kid friendly", "amenity", 14, 26], ["pizza", "dish", 27, 32], ["around here", "location", 41, 52]]}

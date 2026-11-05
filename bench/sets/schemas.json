@@ -2,267 +2,938 @@
   "msra": {
     "types": {
       "per": {
-        "description": "A specific person's name.",
+        "description": "具体人物的姓名或其简称（只写名、或领导人姓氏简称也算），不含职务称谓；泛称如 同志们、群众 不算",
         "examples": [
-          "张伟",
-          "温家宝"
+          "王建华",
+          "欧阳修",
+          "小平"
         ],
-        "counter_examples": [
-          "职务称谓如「总书记」「教授」（不是人名）"
-        ],
-        "min_chars": 2
+        "min_chars": 1
       },
       "loc": {
-        "description": "A location name: a country, province, city, or district.",
+        "description": "具体地理专名：国家、省市县乡村、地区、山川河湖、海洋，包括国家或地区的单字简称；只标专名本身，不含 地区/一带 等后缀；泛指如 祖国、我国、全国、国内、各地、地方、世界 不算",
         "examples": [
-          "北京",
-          "长江流域"
+          "四川省",
+          "长江",
+          "东南亚",
+          "中",
+          "美",
+          "港"
         ],
         "counter_examples": [
-          "机构名如「北京大学」（那是 org）"
+          "祖国",
+          "我国",
+          "全国"
         ],
-        "min_chars": 2
+        "min_chars": 1
       },
       "org": {
-        "description": "An organization name: a company, institution, agency, or school.",
+        "description": "具体机构的专有名称：政府部门、党派、公司、学校、团体、媒体、以及带届次的党代会/人代会等会议全称；泛指如 政府、党委、中央、各级党政机关、公司、有关部门 不算",
         "examples": [
-          "北京大学",
-          "信息产业部"
+          "国务院",
+          "中国人民银行",
+          "新华社",
+          "中国共产党第十五次全国代表大会"
         ],
         "counter_examples": [
-          "地名如「北京」（那是 loc）"
-        ],
-        "min_chars": 2
+          "各级党委",
+          "政府",
+          "有关部门"
+        ]
       }
     },
-    "source": {
-      "dev_pool": "https://huggingface.co/datasets/PassbyGrocer/msra-ner",
-      "test_pool": "https://huggingface.co/datasets/PassbyGrocer/msra-ner"
-    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
     "seed": 2026,
     "test_size": 200,
     "dev_size": 50,
-    "max_chars": 300
+    "max_chars": 510
   },
   "resume": {
     "types": {
       "name": {
-        "description": "A person's name.",
+        "description": "人物姓名；只写了姓加称呼（先生/女士/教授）时只取姓",
         "examples": [
-          "邵辉"
+          "张明远",
+          "刘"
         ],
-        "min_chars": 2
+        "counter_examples": [
+          "刘先生（应为 刘）"
+        ],
+        "min_chars": 1
       },
       "cont": {
-        "description": "A nationality or continent.",
+        "description": "国籍表述，连同 国籍/籍/公民 字样一起",
         "examples": [
-          "中国",
-          "美国",
-          "欧美"
-        ],
-        "counter_examples": [
-          "民族如「汉族」（那是 race）",
-          "地名如「北京」（那是 loc）"
-        ]
-      },
-      "edu": {
-        "description": "An educational institution: a school or university name.",
-        "examples": [
-          "北京大学",
-          "浙江大学"
-        ],
-        "counter_examples": [
-          "公司名如「阿里巴巴」（那是 org）"
-        ],
-        "min_chars": 2
-      },
-      "loc": {
-        "description": "A location name: a place, city, or region.",
-        "examples": [
-          "北京",
-          "上海"
-        ],
-        "counter_examples": [
-          "国籍如「中国」（那是 cont）",
-          "学校名、公司名、工作单位都不是 loc"
-        ],
-        "min_chars": 2
-      },
-      "org": {
-        "description": "An organization: a company, government body, or association.",
-        "examples": [
-          "阿里巴巴",
-          "中央电视台"
-        ],
-        "counter_examples": [
-          "大学与学校名（那是 edu）"
-        ],
-        "min_chars": 2
-      },
-      "pro": {
-        "description": "A professional field or qualification studied or held.",
-        "examples": [
-          "软件工程",
-          "会计",
-          "市场营销"
-        ],
-        "counter_examples": [
-          "职位头衔如「总经理」「工程师」（那是 title）"
+          "中国国籍",
+          "美国籍",
+          "中国公民"
         ]
       },
       "race": {
-        "description": "An ethnicity.",
+        "description": "民族名称，连同 族 字",
         "examples": [
           "汉族",
-          "回族",
-          "蒙古族"
+          "回族"
+        ],
+        "min_chars": 1
+      },
+      "loc": {
+        "description": "籍贯或出生地，连同末尾的 人 字；工作单位里出现的地名不算",
+        "examples": [
+          "浙江温州人",
+          "河北保定人"
+        ]
+      },
+      "edu": {
+        "description": "学历或学位，连同 学历/学位 字样；前面的专业名称不含在内",
+        "examples": [
+          "本科学历",
+          "硕士",
+          "博士研究生",
+          "学士学位"
+        ]
+      },
+      "pro": {
+        "description": "所学专业或学科名称，连同 专业 字样；不含学校和学历",
+        "examples": [
+          "会计学专业",
+          "计算机应用专业",
+          "法律",
+          "工商管理"
+        ]
+      },
+      "org": {
+        "description": "公司、学校、院系、政府、协会、党组织等机构名称本身，包括 公司、本公司 这类指代；紧跟在后面的部门职务不算在机构名里",
+        "examples": [
+          "华夏银行",
+          "复旦大学管理学院",
+          "本公司",
+          "中国共产党"
         ],
         "counter_examples": [
-          "国籍如「中国」（那是 cont）"
+          "华夏银行行长（应拆为 华夏银行 + 行长）"
         ]
       },
       "title": {
-        "description": "A job title or position held at an organization.",
+        "description": "单个职务、职称或政治面貌，不含前面的机构名；用 兼、、 连接的多个职务分别标注；部门加职务（如 财务部经理）整体算一个职务",
         "examples": [
-          "总经理",
           "董事长",
-          "工程师"
+          "高级工程师",
+          "财务部经理",
+          "中共党员"
         ],
         "counter_examples": [
-          "专业领域如「软件工程」（那是 pro）"
+          "总经理兼董事（应拆为 总经理 + 董事）"
         ]
       }
     },
-    "source": {
-      "dev_pool": "https://huggingface.co/datasets/PassbyGrocer/resume-ner",
-      "test_pool": "https://huggingface.co/datasets/PassbyGrocer/resume-ner"
-    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
     "seed": 2026,
     "test_size": 200,
     "dev_size": 50,
-    "max_chars": 300
+    "max_chars": 510
   },
-  "cluener": {
+  "weibo": {
     "types": {
-      "address": {
-        "description": "A street or postal address.",
+      "per_nam": {
+        "description": "具体人物的名字、昵称或艺名",
         "examples": [
-          "北京市朝阳区望京街10号"
+          "刘德华",
+          "小明"
+        ],
+        "min_chars": 1
+      },
+      "per_nom": {
+        "description": "指人的普通名词或称呼，如亲属、身份、群体",
+        "examples": [
+          "男朋友",
+          "网友",
+          "美女"
+        ]
+      },
+      "org_nam": {
+        "description": "具体公司、学校、团体、品牌主体的名称",
+        "examples": [
+          "小米",
+          "北京大学"
+        ]
+      },
+      "org_nom": {
+        "description": "指机构的普通名词",
+        "examples": [
+          "公司",
+          "学校",
+          "政府"
+        ]
+      },
+      "gpe_nam": {
+        "description": "国家、省、市、县等行政区划名称",
+        "examples": [
+          "中国",
+          "广州"
+        ]
+      },
+      "gpe_nom": {
+        "description": "指行政区划的普通名词",
+        "examples": [
+          "国家",
+          "城市",
+          "家乡"
+        ]
+      },
+      "loc_nam": {
+        "description": "具体地点、景点、建筑、自然地理名称",
+        "examples": [
+          "西湖",
+          "天安门"
+        ]
+      },
+      "loc_nom": {
+        "description": "指地点的普通名词",
+        "examples": [
+          "公园",
+          "机场",
+          "楼下"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
+  },
+  "conll": {
+    "types": {
+      "per": {
+        "description": "name of a person (real or fictional), without titles such as Mr or President",
+        "examples": [
+          "Angela Merkel",
+          "Smith"
+        ]
+      },
+      "loc": {
+        "description": "country, city, region, geographic place; NOT when the place name stands for a sports team",
+        "examples": [
+          "Germany",
+          "New York",
+          "Europe"
+        ]
+      },
+      "org": {
+        "description": "company, government body, political party, agency, institution, club, and sports teams even when named only by their city or country (e.g. in results tables); a preceding country or possessive is not part of the name",
+        "examples": [
+          "Microsoft",
+          "Manchester United",
+          "Reuters",
+          "Chester (as a football team)"
         ],
         "counter_examples": [
-          "景点名如「故宫」（那是 scene）",
-          "城市名单独出现时不是 address"
+          "Japan 's Economic Planning Agency (tag Japan and Economic Planning Agency separately)"
+        ]
+      },
+      "misc": {
+        "description": "other proper names: nationality or demonym adjectives, languages, religions, named events and competitions, named products and titles of works; NOT dates, weekdays, months, job titles or common nouns",
+        "examples": [
+          "German",
+          "World Cup",
+          "Olympics",
+          "Windows"
+        ],
+        "counter_examples": [
+          "Friday",
+          "minister",
+          "floating rate issue"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
+  },
+  "crossner_ai": {
+    "types": {
+      "algorithm": {
+        "description": "an algorithm, model or method",
+        "examples": [
+          "gradient descent",
+          "support vector machine"
+        ]
+      },
+      "conference": {
+        "description": "an academic conference or journal venue",
+        "examples": [
+          "NeurIPS",
+          "ICML"
+        ]
+      },
+      "country": {
+        "description": "a country or nation state, including historical ones",
+        "examples": [
+          "France",
+          "Soviet Union"
+        ]
+      },
+      "field": {
+        "description": "a research field or subfield",
+        "examples": [
+          "machine learning",
+          "computer vision"
+        ]
+      },
+      "location": {
+        "description": "a geographic place that is not a country: city, region, province, river, mountain, constituency",
+        "examples": [
+          "Paris",
+          "Ontario"
+        ]
+      },
+      "metrics": {
+        "description": "an evaluation metric or measure",
+        "examples": [
+          "F1 score",
+          "BLEU"
+        ]
+      },
+      "misc": {
+        "description": "any other named entity that fits none of the types above, e.g. nationality, language, religion, named object or work",
+        "examples": [
+          "German",
+          "Buddhism"
+        ]
+      },
+      "organisation": {
+        "description": "an organisation, company, agency, court, army or institution that fits no more specific type",
+        "examples": [
+          "Red Cross",
+          "Google"
+        ]
+      },
+      "person": {
+        "description": "a person who does not fit a more specific role type listed here",
+        "examples": [
+          "John Smith"
+        ]
+      },
+      "product": {
+        "description": "a product, software system or tool",
+        "examples": [
+          "iPhone",
+          "TensorFlow"
+        ]
+      },
+      "programlang": {
+        "description": "a programming language",
+        "examples": [
+          "Python",
+          "Lisp"
+        ]
+      },
+      "researcher": {
+        "description": "a person known for research in AI or computer science",
+        "examples": [
+          "Geoffrey Hinton"
+        ]
+      },
+      "task": {
+        "description": "a problem or task studied in AI",
+        "examples": [
+          "machine translation",
+          "image classification"
+        ]
+      },
+      "university": {
+        "description": "a university or college",
+        "examples": [
+          "Stanford University"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
+  },
+  "crossner_literature": {
+    "types": {
+      "award": {
+        "description": "a named award, prize or honour",
+        "examples": [
+          "Nobel Prize in Physics",
+          "Grammy Award"
         ]
       },
       "book": {
-        "description": "A book title.",
+        "description": "title of a book or novel",
         "examples": [
-          "红楼梦",
-          "三体"
-        ],
-        "counter_examples": [
-          "影视作品名（那是 movie）"
-        ],
-        "include_brackets": true
-      },
-      "company": {
-        "description": "A company name.",
-        "examples": [
-          "腾讯",
-          "字节跳动"
-        ],
-        "counter_examples": [
-          "政府机构（那是 government）",
-          "学校、社团等（那是 organization）"
-        ],
-        "min_chars": 2
-      },
-      "game": {
-        "description": "A game name.",
-        "examples": [
-          "王者荣耀",
-          "原神"
+          "Pride and Prejudice"
         ]
       },
-      "government": {
-        "description": "A government body, agency, or public institution.",
+      "country": {
+        "description": "a country or nation state, including historical ones",
         "examples": [
-          "国家发改委",
-          "教育部"
-        ],
-        "counter_examples": [
-          "公司名（那是 company）"
+          "France",
+          "Soviet Union"
         ]
       },
-      "job": {
-        "description": "A job position or profession held.",
+      "event": {
+        "description": "a named event such as a war, festival, conference or ceremony",
         "examples": [
-          "产品经理",
-          "教师"
-        ],
-        "counter_examples": [
-          "职级头衔如「董事长」（那是 position）"
+          "World War II",
+          "Woodstock"
         ]
       },
-      "movie": {
-        "description": "A movie or film title.",
+      "literarygenre": {
+        "description": "a genre of literature",
         "examples": [
-          "流浪地球",
-          "泰坦尼克号"
-        ],
-        "counter_examples": [
-          "书名（那是 book）"
-        ],
-        "include_brackets": true
-      },
-      "name": {
-        "description": "A person's name.",
-        "examples": [
-          "王小婷"
-        ],
-        "min_chars": 2
-      },
-      "organization": {
-        "description": "An organization other than a company or government body: an NGO, university, hospital, or club.",
-        "examples": [
-          "北京航空航天大学",
-          "红十字会"
-        ],
-        "counter_examples": [
-          "公司名（那是 company）",
-          "政府机构（那是 government）"
+          "science fiction",
+          "poetry"
         ]
       },
-      "position": {
-        "description": "A job title or rank.",
+      "location": {
+        "description": "a geographic place that is not a country: city, region, province, river, mountain, constituency",
         "examples": [
-          "董事长",
-          "高级工程师"
-        ],
-        "counter_examples": [
-          "职业品类如「产品经理」（那是 job）"
+          "Paris",
+          "Ontario"
         ]
       },
-      "scene": {
-        "description": "A scenic spot, tourist attraction, or venue.",
+      "magazine": {
+        "description": "a magazine, newspaper or periodical",
         "examples": [
-          "故宫",
-          "迪士尼乐园"
-        ],
-        "counter_examples": [
-          "街道地址（那是 address）"
-        ],
-        "min_chars": 2
+          "The New Yorker"
+        ]
+      },
+      "misc": {
+        "description": "any other named entity that fits none of the types above, e.g. nationality, language, religion, named object or work",
+        "examples": [
+          "German",
+          "Buddhism"
+        ]
+      },
+      "organisation": {
+        "description": "an organisation, company, agency, court, army or institution that fits no more specific type",
+        "examples": [
+          "Red Cross",
+          "Google"
+        ]
+      },
+      "person": {
+        "description": "a person who does not fit a more specific role type listed here",
+        "examples": [
+          "John Smith"
+        ]
+      },
+      "poem": {
+        "description": "title of a poem",
+        "examples": [
+          "The Raven"
+        ]
+      },
+      "writer": {
+        "description": "a person known as an author, novelist, poet or playwright",
+        "examples": [
+          "Jane Austen"
+        ]
       }
     },
-    "source": {
-      "dev_pool": "https://huggingface.co/datasets/xusenlin/clue-ner",
-      "test_pool": "https://huggingface.co/datasets/xusenlin/clue-ner"
-    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
     "seed": 2026,
     "test_size": 200,
     "dev_size": 50,
-    "max_chars": 300
+    "max_chars": 510
+  },
+  "crossner_music": {
+    "types": {
+      "album": {
+        "description": "title of a music album",
+        "examples": [
+          "Abbey Road"
+        ]
+      },
+      "award": {
+        "description": "a named award, prize or honour",
+        "examples": [
+          "Nobel Prize in Physics",
+          "Grammy Award"
+        ]
+      },
+      "band": {
+        "description": "a musical group or band",
+        "examples": [
+          "The Beatles"
+        ]
+      },
+      "country": {
+        "description": "a country or nation state, including historical ones",
+        "examples": [
+          "France",
+          "Soviet Union"
+        ]
+      },
+      "event": {
+        "description": "a named event such as a war, festival, conference or ceremony",
+        "examples": [
+          "World War II",
+          "Woodstock"
+        ]
+      },
+      "location": {
+        "description": "a geographic place that is not a country: city, region, province, river, mountain, constituency",
+        "examples": [
+          "Paris",
+          "Ontario"
+        ]
+      },
+      "misc": {
+        "description": "any other named entity that fits none of the types above, e.g. nationality, language, religion, named object or work",
+        "examples": [
+          "German",
+          "Buddhism"
+        ]
+      },
+      "musicalartist": {
+        "description": "a singer, musician, composer or rapper",
+        "examples": [
+          "Adele"
+        ]
+      },
+      "musicalinstrument": {
+        "description": "a musical instrument",
+        "examples": [
+          "guitar",
+          "violin"
+        ]
+      },
+      "musicgenre": {
+        "description": "a genre of music",
+        "examples": [
+          "jazz",
+          "hip hop"
+        ]
+      },
+      "organisation": {
+        "description": "an organisation, company, agency, court, army or institution that fits no more specific type",
+        "examples": [
+          "Red Cross",
+          "Google"
+        ]
+      },
+      "person": {
+        "description": "a person who does not fit a more specific role type listed here",
+        "examples": [
+          "John Smith"
+        ]
+      },
+      "song": {
+        "description": "title of a song or single",
+        "examples": [
+          "Yesterday"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
+  },
+  "crossner_politics": {
+    "types": {
+      "country": {
+        "description": "a country or nation state, including historical ones",
+        "examples": [
+          "France",
+          "Soviet Union"
+        ]
+      },
+      "election": {
+        "description": "a named election",
+        "examples": [
+          "2010 UK general election"
+        ]
+      },
+      "event": {
+        "description": "a named event such as a war, festival, conference or ceremony",
+        "examples": [
+          "World War II",
+          "Woodstock"
+        ]
+      },
+      "location": {
+        "description": "a geographic place that is not a country: city, region, province, river, mountain, constituency",
+        "examples": [
+          "Paris",
+          "Ontario"
+        ]
+      },
+      "misc": {
+        "description": "any other named entity that fits none of the types above, e.g. nationality, language, religion, named object or work",
+        "examples": [
+          "German",
+          "Buddhism"
+        ]
+      },
+      "organisation": {
+        "description": "an organisation, company, agency, court, army or institution that fits no more specific type",
+        "examples": [
+          "Red Cross",
+          "Google"
+        ]
+      },
+      "person": {
+        "description": "a person who does not fit a more specific role type listed here",
+        "examples": [
+          "John Smith"
+        ]
+      },
+      "politicalparty": {
+        "description": "a political party",
+        "examples": [
+          "Labour Party"
+        ]
+      },
+      "politician": {
+        "description": "a person active in politics: head of state, minister, legislator, party leader",
+        "examples": [
+          "Angela Merkel"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
+  },
+  "crossner_science": {
+    "types": {
+      "academicjournal": {
+        "description": "an academic journal",
+        "examples": [
+          "Nature",
+          "Physical Review Letters"
+        ]
+      },
+      "astronomicalobject": {
+        "description": "a planet, star, galaxy, comet or other celestial object",
+        "examples": [
+          "Mars",
+          "Andromeda Galaxy"
+        ]
+      },
+      "award": {
+        "description": "a named award, prize or honour",
+        "examples": [
+          "Nobel Prize in Physics",
+          "Grammy Award"
+        ]
+      },
+      "chemicalcompound": {
+        "description": "a chemical compound or molecule",
+        "examples": [
+          "glucose",
+          "sodium chloride"
+        ]
+      },
+      "chemicalelement": {
+        "description": "a chemical element",
+        "examples": [
+          "oxygen",
+          "iron"
+        ]
+      },
+      "country": {
+        "description": "a country or nation state, including historical ones",
+        "examples": [
+          "France",
+          "Soviet Union"
+        ]
+      },
+      "discipline": {
+        "description": "an academic discipline",
+        "examples": [
+          "physics",
+          "biochemistry"
+        ]
+      },
+      "enzyme": {
+        "description": "an enzyme",
+        "examples": [
+          "lactase",
+          "DNA polymerase"
+        ]
+      },
+      "event": {
+        "description": "a named event such as a war, festival, conference or ceremony",
+        "examples": [
+          "World War II",
+          "Woodstock"
+        ]
+      },
+      "location": {
+        "description": "a geographic place that is not a country: city, region, province, river, mountain, constituency",
+        "examples": [
+          "Paris",
+          "Ontario"
+        ]
+      },
+      "misc": {
+        "description": "any other named entity that fits none of the types above, e.g. nationality, language, religion, named object or work",
+        "examples": [
+          "German",
+          "Buddhism"
+        ]
+      },
+      "organisation": {
+        "description": "an organisation, company, agency, court, army or institution that fits no more specific type",
+        "examples": [
+          "Red Cross",
+          "Google"
+        ]
+      },
+      "person": {
+        "description": "a person who does not fit a more specific role type listed here",
+        "examples": [
+          "John Smith"
+        ]
+      },
+      "protein": {
+        "description": "a protein that is not an enzyme",
+        "examples": [
+          "hemoglobin",
+          "insulin"
+        ]
+      },
+      "scientist": {
+        "description": "a person known as a scientist",
+        "examples": [
+          "Marie Curie"
+        ]
+      },
+      "theory": {
+        "description": "a named scientific theory, law or principle",
+        "examples": [
+          "general relativity"
+        ]
+      },
+      "university": {
+        "description": "a university or college",
+        "examples": [
+          "Stanford University"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
+  },
+  "cluener": {
+    "types": {
+      "name": {
+        "description": "人名，也包括小说里的人物、人物绰号、能对应到具体人物的著名别称",
+        "examples": [
+          "林志玲",
+          "宋江",
+          "及时雨"
+        ]
+      },
+      "address": {
+        "description": "省、市、区、街道、门牌号、路、村等地址，单独出现也标；地址要标记完全、标到最细",
+        "examples": [
+          "成都",
+          "北京市朝阳区建国路88号",
+          "长丰村"
+        ]
+      },
+      "company": {
+        "description": "公司、集团、银行（央行、中国人民银行除外）、网站媒体等企业名称或简称",
+        "examples": [
+          "新东方",
+          "招商银行",
+          "新华网"
+        ]
+      },
+      "government": {
+        "description": "中央和地方行政机关：国务院及各部委、中国人民银行、审计署、海关税务工商等直属机构，以及军队",
+        "examples": [
+          "财政部",
+          "银监会",
+          "美军"
+        ]
+      },
+      "organization": {
+        "description": "篮球队、足球队、乐团、社团、联赛、学校等，也包括小说里的帮派门派",
+        "examples": [
+          "皇家马德里",
+          "少林寺",
+          "丐帮"
+        ]
+      },
+      "position": {
+        "description": "古代或现代的职称职位身份，如 总经理、记者、艺术家、巡抚",
+        "examples": [
+          "记者",
+          "总裁",
+          "收藏家"
+        ]
+      },
+      "scene": {
+        "description": "常见旅游景点、公园、动物园、海洋馆、博物馆，以及作为景点提及的江河湖山、古镇村落",
+        "examples": [
+          "长沙公园",
+          "黄河",
+          "故宫"
+        ]
+      },
+      "book": {
+        "description": "小说、杂志、教材、地图册、食谱等书店能买到的书籍，含电子书；由书改编的电影按上下文区分",
+        "examples": [
+          "《三体》",
+          "《读者》"
+        ],
+        "include_brackets": true
+      },
+      "movie": {
+        "description": "电影（包括院线纪录片）；按上下文区分是电影名还是书名",
+        "examples": [
+          "《流浪地球》",
+          "《泰坦尼克号》"
+        ],
+        "include_brackets": true
+      },
+      "game": {
+        "description": "电子游戏、网络游戏；由小说电视剧改编的要看具体场景是不是游戏",
+        "examples": [
+          "英雄联盟",
+          "魔兽世界"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
+  },
+  "wnut": {
+    "types": {
+      "person": {
+        "description": "name of a person, including usernames or nicknames that refer to a person",
+        "examples": [
+          "Taylor",
+          "Jonyeee"
+        ]
+      },
+      "location": {
+        "description": "name of a place: city, country, venue, landmark",
+        "examples": [
+          "Chicago",
+          "Central Park"
+        ]
+      },
+      "corporation": {
+        "description": "a company or business named as an organisation",
+        "examples": [
+          "Apple",
+          "Starbucks"
+        ]
+      },
+      "product": {
+        "description": "a named product, device, app, game or service",
+        "examples": [
+          "Galaxy S8",
+          "Instagram"
+        ]
+      },
+      "creative_work": {
+        "description": "title of a movie, song, book, TV show or album",
+        "examples": [
+          "Game of Thrones"
+        ]
+      },
+      "group": {
+        "description": "a named group: band, sports team, club, political or social group",
+        "examples": [
+          "Lakers",
+          "Metallica"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
+  },
+  "mitres": {
+    "types": {
+      "restaurant_name": {
+        "description": "name of a restaurant or chain",
+        "examples": [
+          "olive garden"
+        ]
+      },
+      "cuisine": {
+        "description": "a type of cuisine or restaurant category",
+        "examples": [
+          "thai",
+          "fast food"
+        ]
+      },
+      "dish": {
+        "description": "a specific dish, food or drink",
+        "examples": [
+          "pad thai",
+          "margaritas"
+        ]
+      },
+      "amenity": {
+        "description": "a feature or service of the place: seating, parking, bar, kid friendly, atmosphere",
+        "examples": [
+          "outdoor seating",
+          "kid friendly"
+        ]
+      },
+      "location": {
+        "description": "where the restaurant should be, including relative phrases",
+        "examples": [
+          "near me",
+          "within 5 miles",
+          "downtown"
+        ]
+      },
+      "hours": {
+        "description": "opening time or time constraint",
+        "examples": [
+          "open now",
+          "after 10 pm"
+        ]
+      },
+      "price": {
+        "description": "price level or cost words",
+        "examples": [
+          "cheap",
+          "under 20 dollars"
+        ]
+      },
+      "rating": {
+        "description": "quality or rating words",
+        "examples": [
+          "five star",
+          "highly rated"
+        ]
+      }
+    },
+    "source": "public HuggingFace mirrors; annotation-guideline-derived schemas",
+    "seed": 2026,
+    "test_size": 200,
+    "dev_size": 50,
+    "max_chars": 510
   },
   "languages": {
     "source": "tests/test_languages.py LANGUAGE_CASES (frozen)",

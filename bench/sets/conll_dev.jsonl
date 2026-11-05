@@ -1,0 +1,50 @@
+{"id": "conll-443", "text": "7.JohnMayock(Britain)3:54.67", "entities": [["JohnMayock", "per", 2, 12], ["Britain", "loc", 13, 20]]}
+{"id": "conll-1900", "text": "17.PeterMitchell183,704", "entities": [["PeterMitchell", "per", 3, 16]]}
+{"id": "conll-325", "text": "Athree-timeProBowlselection,Cunninghamrushedfor4,482yardson677carries.", "entities": [["ProBowl", "misc", 11, 18], ["Cunningham", "per", 28, 38]]}
+{"id": "conll-55", "text": "days)", "entities": []}
+{"id": "conll-2683", "text": "SOCCER-GERMANCUPSECONDROUNDRESULTS.", "entities": [["GERMANCUP", "misc", 7, 16]]}
+{"id": "conll-1320", "text": "\"PracticesoftheIsraeligovernment,especiallyitssettlementactivities,cametoconfirmthatdealingwiththisgovernmentinflictsthebiggestharmontheArabcause,\"state-runDamascusRadiosaidinacommentary.", "entities": [["Israeli", "misc", 15, 22], ["Arab", "misc", 136, 140], ["DamascusRadio", "org", 156, 169]]}
+{"id": "conll-3246", "text": "BrokerssaidbluechipslikeIDLC,BangladeshLamps,ChittagongCementandAtlasBangladeshwereexpectedtorise.", "entities": [["IDLC", "org", 24, 28], ["BangladeshLamps", "org", 29, 44], ["ChittagongCement", "org", 45, 61], ["AtlasBangladesh", "org", 64, 79]]}
+{"id": "conll-1663", "text": "HERZLIYA,Israel1996-08-31", "entities": [["HERZLIYA", "loc", 0, 8], ["Israel", "loc", 9, 15]]}
+{"id": "conll-2562", "text": "StevePagani", "entities": [["StevePagani", "per", 0, 11]]}
+{"id": "conll-751", "text": "--JimBallantyne,LondonNewsroom+441715428062", "entities": [["JimBallantyne", "per", 2, 15], ["LondonNewsroom", "org", 16, 30]]}
+{"id": "conll-1633", "text": "PalestinianswantArabEastJerusalemasthecapitalofafutureindependentstate.", "entities": [["Palestinians", "misc", 0, 12], ["ArabEastJerusalem", "loc", 16, 33]]}
+{"id": "conll-737", "text": "Thismergermakesusmuchmorecompetitive.\"", "entities": []}
+{"id": "conll-1424", "text": "NYDowcloseLondonopeningLMEclose", "entities": [["NYDow", "misc", 0, 5], ["London", "loc", 10, 16], ["LME", "org", 23, 26]]}
+{"id": "conll-2438", "text": "BOSTONATOAKLAND", "entities": [["BOSTON", "org", 0, 6], ["OAKLAND", "loc", 8, 15]]}
+{"id": "conll-733", "text": "Douglas&Lomasonhas4.45millioncommonsharesoutstanding,someofwhichareoptionsharestobepurchasedatexercisepriceslessthanthe$31offeredprice.", "entities": [["Douglas&Lomason", "org", 0, 15]]}
+{"id": "conll-1133", "text": "Thespare,soft-spokensonofanItalianstonecuttertookovertheChicagoarchdiocese,thenation'ssecond-largestafterLosAngeles,with2.3millionparishioners,in1982.", "entities": [["Italian", "misc", 27, 34], ["Chicago", "loc", 56, 63], ["LosAngeles", "loc", 105, 115]]}
+{"id": "conll-1183", "text": "IRVINE,Calif1996-08-30", "entities": [["IRVINE", "loc", 0, 6], ["Calif", "loc", 7, 12]]}
+{"id": "conll-2813", "text": "OB43662.41420", "entities": [["OB", "org", 0, 2]]}
+{"id": "conll-2497", "text": "Iwasn'tsatisfiedwithanyofmypitchesandIdidabetterjobofmovingtheballaroundinthelaterinnings.\"", "entities": []}
+{"id": "conll-313", "text": "Ididn'tplaymytennis.\"", "entities": []}
+{"id": "conll-2619", "text": "\"WestartedpanickingabitaftertheTurkishgoal...", "entities": [["Turkish", "misc", 31, 38]]}
+{"id": "conll-2704", "text": "Sheaddedthatthehoroscopewaspurelyforsecuritypurposesandshewasneverconsultedaboutpoliticalmoves.", "entities": []}
+{"id": "conll-1399", "text": "WASHINGTON1996-08-30", "entities": [["WASHINGTON", "loc", 0, 10]]}
+{"id": "conll-1237", "text": "Thelistwasbeingstudiedforpossiblelinkstopreviouschildkidnappingsandprostitution,aprosecutors'spokesmantoldReuters.", "entities": [["Reuters", "org", 106, 113]]}
+{"id": "conll-273", "text": "Chicago4HOUSTON3", "entities": [["Chicago", "org", 0, 7], ["HOUSTON", "org", 8, 15]]}
+{"id": "conll-1043", "text": "RonaldReagan'staxcutwonhimasecondfour-yeartermintheWhiteHousein1984,whileDemocratWalterMondale,whopromisedhighertaxes,lost.", "entities": [["RonaldReagan", "per", 0, 12], ["WhiteHouse", "loc", 51, 61], ["Democrat", "misc", 73, 81], ["WalterMondale", "per", 81, 94]]}
+{"id": "conll-3077", "text": "\"TheleadershiphasdecidedtoprovidesupportandmilitaryaidtoMrMassoudBarzaniandhiscomradestoenablethemconfronttheviciousaggression...", "entities": [["MassoudBarzani", "per", 58, 72]]}
+{"id": "conll-2678", "text": "KlinsmannsaidhebelievedGermanycouldwininFrancewiththesamenucleusofplayerswhichwontheEuropeanchampionshipinEnglandthissummer.", "entities": [["Klinsmann", "per", 0, 9], ["Germany", "loc", 23, 30], ["France", "loc", 40, 46], ["European", "misc", 84, 92], ["England", "loc", 106, 113]]}
+{"id": "conll-1044", "text": "GeorgeBushbecamepresidentin1988onhisno-new-taxcampaignandClintonwonin1992withapromisetofattenworkers'paychecks.", "entities": [["GeorgeBush", "per", 0, 10], ["Clinton", "per", 57, 64]]}
+{"id": "conll-1741", "text": "Extras(lb-25w-4nb-3)32", "entities": []}
+{"id": "conll-2072", "text": "Divisiontwo", "entities": []}
+{"id": "conll-935", "text": "NeitherLebednorMaskhadovmadeanystatementbeforethetalks.", "entities": [["Lebed", "per", 7, 12], ["Maskhadov", "per", 15, 24]]}
+{"id": "conll-641", "text": "Australia-IanHealy(captain),MichaelBevan,Damien", "entities": [["Australia", "loc", 0, 9], ["IanHealy", "per", 10, 18], ["MichaelBevan", "per", 28, 40], ["Damien", "per", 41, 47]]}
+{"id": "conll-3006", "text": "Wang'sfamilyandHangzhoupolicecouldnotbereachedforimmediatecomment.", "entities": [["Wang", "per", 0, 4], ["Hangzhou", "loc", 15, 23]]}
+{"id": "conll-1382", "text": "199855,000", "entities": []}
+{"id": "conll-1417", "text": "Spendingonalltypesofdurablegoods,whichincludescars,felltoanannualrateof$626.3billioninJulyfrom$633.6billioninJune.", "entities": []}
+{"id": "conll-898", "text": "Shellshadsmashedroofsandwindowsandemptyshellcaseslitteredthestreets.", "entities": []}
+{"id": "conll-1630", "text": "PalestinianPresidentYasserArafatarrivedintheWestBankself-ruleenclaveofNablusfromRamallahonFriday,witnessessaid.", "entities": [["Palestinian", "misc", 0, 11], ["YasserArafat", "per", 20, 32], ["WestBank", "loc", 44, 52], ["Nablus", "loc", 70, 76], ["Ramallah", "loc", 80, 88]]}
+{"id": "conll-1858", "text": "BuddyGroompitchedaperfectninthinning.", "entities": [["BuddyGroom", "per", 0, 10]]}
+{"id": "conll-1562", "text": "Deliveriesareduetobecompletedby1999,thecompanysaid.", "entities": []}
+{"id": "conll-671", "text": "WktoAug28ChgonwkChgonyr", "entities": []}
+{"id": "conll-3241", "text": "SharesontheDhakaStockExchange(DSE)mayremainsteadyassmallinvestorsareexpectedtotargetmainlybluechipswhileoverseasinvestorswillprefertokeeptothesidelineswhenthemarketreopensafterMoslemFridayweekend,brokerssaid.", "entities": [["DhakaStockExchange", "org", 11, 29], ["DSE", "org", 30, 33], ["Moslem", "misc", 176, 182]]}
+{"id": "conll-1917", "text": "Dunvant21EbbwVale10", "entities": [["Dunvant", "org", 0, 7], ["EbbwVale", "org", 9, 17]]}
+{"id": "conll-1531", "text": "\"Imagineabigplanewithalotofluggageandpeopleonboard.", "entities": []}
+{"id": "conll-3017", "text": "Wang'sfamilycouldnotimmediatelybereachedforcomment.", "entities": [["Wang", "per", 0, 4]]}
+{"id": "conll-3228", "text": "Leeson,theNorthernIreland-bornactorwhowasnominatedforanOscarforbestactorforhisperformancein\"Schindler'sList\",playstheleadroleinJordan'sfilm.", "entities": [["Leeson", "per", 0, 6], ["NorthernIreland-born", "misc", 10, 30], ["Oscar", "per", 55, 60], ["Schindler'sList", "misc", 92, 107], ["Jordan", "per", 127, 133]]}
+{"id": "conll-1290", "text": "19961995", "entities": []}
+{"id": "conll-2513", "text": "InMontreal,ScottSandersallowedonehitovereightinningsandWallyJoynerhitatwo-runsingleinafour-runthirdastheSanDiegoPadresblankedtheExpos6-0fortheirsixthstraightwin.", "entities": [["Montreal", "loc", 2, 10], ["ScottSanders", "per", 11, 23], ["WallyJoyner", "per", 55, 66], ["SanDiegoPadres", "org", 104, 118], ["Expos", "org", 128, 133]]}
+{"id": "conll-509", "text": "1=IgorTrandenkov(Russia)5.86", "entities": [["IgorTrandenkov", "per", 2, 16], ["Russia", "loc", 17, 23]]}
+{"id": "conll-3152", "text": "TwoBelgianteenagegirlsmissingsinceThursdayhavebeenfoundunharmed,policesaidonSaturday.", "entities": [["Belgian", "misc", 3, 10]]}

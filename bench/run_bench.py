@@ -223,7 +223,24 @@ async def amain(args: argparse.Namespace) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--datasets", nargs="*", default=["msra", "resume", "cluener"])
+    ap.add_argument(
+        "--datasets",
+        nargs="*",
+        default=[
+            "msra",
+            "resume",
+            "cluener",
+            "weibo",
+            "conll",
+            "wnut",
+            "mitres",
+            "crossner_ai",
+            "crossner_literature",
+            "crossner_music",
+            "crossner_politics",
+            "crossner_science",
+        ],
+    )
     ap.add_argument("--split", choices=["test", "dev"], default="test")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--tag", default="run")
@@ -235,7 +252,13 @@ def main() -> int:
         "--latency-first", action="store_true", help="skip detection on short texts (fast path)"
     )
     ap.add_argument("--flatten", action="store_true", help="flatten_fragments mode (A7 A/B switch)")
-    ap.add_argument("--no-languages", dest="languages", action="store_false")
+    ap.add_argument(
+        "--with-languages",
+        dest="languages",
+        action="store_true",
+        help="also run the 24-language sweep",
+    )
+    ap.set_defaults(languages=False)
     args = ap.parse_args()
     return asyncio.run(amain(args))
 

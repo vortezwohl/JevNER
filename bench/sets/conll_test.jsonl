@@ -1,0 +1,200 @@
+{"id": "conll-487", "text": "NationalFootballLeague", "entities": [["NationalFootballLeague", "org", 0, 22]]}
+{"id": "conll-1308", "text": "Livshits'swordsareanattempttoputpressureonthecompany.\"", "entities": [["Livshits", "per", 0, 8]]}
+{"id": "conll-2058", "text": "TheClintonadministration'sstrongviewsonthissubjecthavebeenconveyedtotheGreekgovernment,Burnssaid.", "entities": [["Clinton", "per", 3, 10], ["Greek", "misc", 71, 76], ["Burns", "per", 87, 92]]}
+{"id": "conll-2096", "text": "\"I'venevertrieditandwhyshouldI?", "entities": []}
+{"id": "conll-2650", "text": "\"ButIdorememberwehadacobrasnakeinthebasementofourhouse.", "entities": []}
+{"id": "conll-420", "text": "TheEagleswereheldwithoutatouchdownuntilthefinalfiveseconds.", "entities": [["Eagles", "org", 3, 9]]}
+{"id": "conll-914", "text": "--BucharestNewsroom40-13120264", "entities": [["BucharestNewsroom", "org", 2, 19]]}
+{"id": "conll-2461", "text": "8.IsoldeKostner(Italy)60", "entities": [["IsoldeKostner", "per", 2, 15], ["Italy", "loc", 16, 21]]}
+{"id": "conll-2545", "text": "13.BarbaraMerlin(Italy)1:49.76", "entities": [["BarbaraMerlin", "per", 3, 16], ["Italy", "loc", 17, 22]]}
+{"id": "conll-2279", "text": "SHANGHAI1996-12-06", "entities": [["SHANGHAI", "loc", 0, 8]]}
+{"id": "conll-1722", "text": "Wheat387.44677.84553.655.21039.7846.1", "entities": []}
+{"id": "conll-3208", "text": "HapoelJerusalem0MaccabiTelAviv4", "entities": [["HapoelJerusalem", "org", 0, 15], ["MaccabiTelAviv", "org", 16, 30]]}
+{"id": "conll-2345", "text": "SINGAPORE1996-12-06", "entities": [["SINGAPORE", "loc", 0, 9]]}
+{"id": "conll-2243", "text": "AustralianparliamentarianJohnLangmorehasformallyresignedfromhislowerhouseseat,theofficeofHouseofRepresentativesspeakerBobHalversonsaidonFriday.", "entities": [["Australian", "misc", 0, 10], ["JohnLangmore", "per", 25, 37], ["HouseofRepresentatives", "org", 89, 111], ["BobHalverson", "per", 118, 130]]}
+{"id": "conll-3450", "text": "CharltonmanagedIrelandfor93matches,duringwhichtimetheylostonly17timesinalmost10yearsuntilheresignedinDecember1995.", "entities": [["Charlton", "per", 0, 8], ["Ireland", "loc", 15, 22]]}
+{"id": "conll-2992", "text": "Oldham224810232820", "entities": [["Oldham", "org", 0, 6]]}
+{"id": "conll-3180", "text": "Thepairhammered36boundariesbetweenthem.", "entities": []}
+{"id": "conll-3146", "text": "696969,JustinHobday716571", "entities": [["JustinHobday", "per", 7, 19]]}
+{"id": "conll-2010", "text": "WktoDate69,100WeekAgo58,100YearAgo30,800", "entities": []}
+{"id": "conll-3076", "text": "SOCCER-ENGLISHLEAGUEANDCUPRESULTS.", "entities": [["ENGLISH", "misc", 7, 14]]}
+{"id": "conll-3166", "text": "RegulardefenderArturLekbello,whoisinjured,wasmissingfromHafizi'ssquadnamedonSaturdayfortheBelfastmatch.", "entities": [["ArturLekbello", "per", 15, 28], ["Hafizi", "per", 56, 62], ["Belfast", "loc", 90, 97]]}
+{"id": "conll-2402", "text": "5.IsoldeKostner(Italy)1:18.19", "entities": [["IsoldeKostner", "per", 2, 15], ["Italy", "loc", 16, 21]]}
+{"id": "conll-1806", "text": "Asmanyas1milliondogbitesarerecordedintheUnitedStateseveryyearandhalfofthemareprovokedbyhumans,aveterinariantoldfellowanimaldoctorsonFriday.", "entities": [["UnitedStates", "loc", 40, 52]]}
+{"id": "conll-982", "text": "TheUKDepartmentofTransportonFridaysaidthatthelatestroundof\"openskies\"talkswiththeU.S.hadendedwithnodealonliberalisingthetransatlanticflightmarketandnodatesetforwhentalkswouldrestart.", "entities": [["UK", "loc", 3, 5], ["DepartmentofTransport", "org", 5, 26], ["U.S.", "loc", 81, 85]]}
+{"id": "conll-10", "text": "TakuyaTakagiscoredthewinnerinthe88thminute,risingtoheadaHiroshigeYanagimotocrosstowardstheSyriangoalwhichgoalkeeperSalemBitarappearedtohavecoveredbutthenallowedtoslipintothenet.", "entities": [["TakuyaTakagi", "per", 0, 12], ["HiroshigeYanagimoto", "per", 56, 75], ["Syrian", "misc", 90, 96], ["SalemBitar", "per", 115, 125]]}
+{"id": "conll-2515", "text": "18=MiriamVogt(Germany)29", "entities": [["MiriamVogt", "per", 3, 13], ["Germany", "loc", 14, 21]]}
+{"id": "conll-330", "text": "HermawanSusanto(Indonesia)beatSorenB.Nielsen(Denmark)15-815-2", "entities": [["HermawanSusanto", "per", 0, 15], ["Indonesia", "loc", 16, 25], ["SorenB.Nielsen", "per", 30, 44], ["Denmark", "loc", 45, 52]]}
+{"id": "conll-453", "text": "MILWAUKEE88.5008", "entities": [["MILWAUKEE", "org", 0, 9]]}
+{"id": "conll-1176", "text": "TwootherarbscalledNewmont'smovea\"a32centbid\"becausethereisnoformaltenderoffer,onlytheproposalletter\"mailed\"toSantaFe'sboard.", "entities": [["Newmont", "org", 18, 25], ["SantaFe", "org", 109, 116]]}
+{"id": "conll-3345", "text": "STLOUIS14140828428", "entities": [["STLOUIS", "org", 0, 7]]}
+{"id": "conll-401", "text": "OTTAWAATEDMONTON", "entities": [["OTTAWA", "org", 0, 6], ["EDMONTON", "loc", 8, 16]]}
+{"id": "conll-1841", "text": "Thenominees,accordingtodiplomats,are:KofiAnnanofGhana,theU.N.undersecretary-generalforpeacekeeping;AhmedouOuldAbdallahofMauritania,theformerU.N.specialenvoyforBurundi;AmaraEssyoftheIvoryCoast,itsforeignministerandtheU.N.GeneralAssemblypresidentin1994-95;andHamidAlgabidofNiger,thesecretary-generaloftheOrganisationoftheIslamicConference.", "entities": [["KofiAnnan", "per", 37, 46], ["Ghana", "loc", 48, 53], ["U.N.", "org", 57, 61], ["AhmedouOuldAbdallah", "per", 99, 118], ["Mauritania", "loc", 120, 130], ["U.N.", "org", 140, 144], ["Burundi", "loc", 159, 166], ["AmaraEssy", "per", 167, 176], ["IvoryCoast", "loc", 181, 191], ["U.N.GeneralAssembly", "org", 216, 235], ["HamidAlgabid", "per", 257, 269], ["Niger", "loc", 271, 276], ["OrganisationoftheIslamicConference", "org", 302, 336]]}
+{"id": "conll-47", "text": "Syria:24-SalemBitar,3-BacharSrour;4-HassanAbbas,5-TarekJabban,6-AmmarAwad(9-LouayTaleb69),8-Nihadal-Boushi,10-MohammedAfash,12-AliDib,13-AbdulLatifHelou(17-AmmarRihawiy46),14-KhaledZaher;16-NaderJokhadar.", "entities": [["Syria", "loc", 0, 5], ["SalemBitar", "per", 9, 19], ["BacharSrour", "per", 22, 33], ["HassanAbbas", "per", 36, 47], ["TarekJabban", "per", 50, 61], ["AmmarAwad", "per", 64, 73], ["LouayTaleb", "per", 76, 86], ["Nihadal-Boushi", "per", 92, 106], ["MohammedAfash", "per", 110, 123], ["AliDib", "per", 127, 133], ["AbdulLatifHelou", "per", 137, 152], ["AmmarRihawiy", "per", 156, 168], ["KhaledZaher", "per", 175, 186], ["NaderJokhadar", "per", 190, 203]]}
+{"id": "conll-3337", "text": "NYRANGERS11135978627", "entities": [["NYRANGERS", "org", 0, 9]]}
+{"id": "conll-2806", "text": "Glentoran1Coleraine0", "entities": [["Glentoran", "org", 0, 9], ["Coleraine", "org", 10, 19]]}
+{"id": "conll-2008", "text": "-USDA", "entities": [["USDA", "org", 1, 5]]}
+{"id": "conll-2782", "text": "(Dunfermline),ColinCameron(Hearts),Robert", "entities": [["Dunfermline", "org", 1, 12], ["ColinCameron", "per", 14, 26], ["Hearts", "org", 27, 33], ["Robert", "per", 35, 41]]}
+{"id": "conll-1287", "text": "AnAlbaniancourtonFridaysentencedamanwhothreatenedtoblowhimselfupoutsidePresidentSaliBerisha'sofficeto13yearsinjailforguerrillaactionandillegalpossessionofarms.", "entities": [["Albanian", "misc", 2, 10], ["SaliBerisha", "per", 80, 91]]}
+{"id": "conll-861", "text": "InBelgrade:", "entities": [["Belgrade", "loc", 2, 10]]}
+{"id": "conll-1627", "text": "*1995totalsadjustedtoreflectNASSrevisions1996TotalsaresubjecttorevisionYearlytotalsmaynotaddduetorounding.", "entities": [["NASS", "org", 28, 32]]}
+{"id": "conll-1030", "text": "Thesharpmovesonthescreenmakeeveryonenervous,\"atradersaid.", "entities": []}
+{"id": "conll-1424", "text": "Beautyidealsandculturesaredifferentineverycountry.\"", "entities": []}
+{"id": "conll-1460", "text": "Seventy-sevenstudentswerefoundwiththewatchesanddisqualified,OGlobosaid.", "entities": [["OGlobo", "org", 60, 66]]}
+{"id": "conll-3297", "text": "MILWAUKEEATWASHINGTON", "entities": [["MILWAUKEE", "org", 0, 9], ["WASHINGTON", "loc", 11, 21]]}
+{"id": "conll-1541", "text": "BillBrett,chairmanoftheILOWorkersGroup,toldReutersbeforethenewsconferencehewas\"nottoosurprised,butverydisappointed\"thatthespeakinginvitationhadbeenwithdrawn.", "entities": [["BillBrett", "per", 0, 9], ["ILOWorkersGroup", "org", 23, 38], ["Reuters", "org", 43, 50]]}
+{"id": "conll-3055", "text": "Dunfermline2Aberdeen3", "entities": [["Dunfermline", "org", 0, 11], ["Aberdeen", "org", 12, 20]]}
+{"id": "conll-2103", "text": "BeforetheInternet,thosewhosebusinesswastoprotectcopyrightsknewwheretheystood.", "entities": [["Internet", "misc", 9, 17]]}
+{"id": "conll-2612", "text": "IGLS,Austria1996-12-07", "entities": [["IGLS", "loc", 0, 4], ["Austria", "loc", 5, 12]]}
+{"id": "conll-312", "text": "BothWestIndiesandAustraliateammanagementhaveplayeddowntheincident,stressingthatrelationsbetweenthetwosideshavenotbeenadverselyaffected.", "entities": [["WestIndies", "loc", 4, 14], ["Australia", "loc", 17, 26]]}
+{"id": "conll-2961", "text": "Sunderland16457142117", "entities": [["Sunderland", "org", 0, 10]]}
+{"id": "conll-1394", "text": "Simec,thesteelmakingarmofthedebt-riddenSidekgroupheadedthelosers,off7centavos(1cent)at1.40pesos(18cents).", "entities": [["Simec", "org", 0, 5], ["Sidek", "org", 39, 44]]}
+{"id": "conll-367", "text": "ATLANTICDIVISION", "entities": [["ATLANTIC", "loc", 0, 8]]}
+{"id": "conll-2283", "text": "SouthKoreanwonclosesdownonimportsettlements.", "entities": [["SouthKorean", "misc", 0, 11]]}
+{"id": "conll-2203", "text": "Ifhedoesn'tresign,theprimeministerhasgottofirehim.\"", "entities": []}
+{"id": "conll-1196", "text": "Kinshasaopposesairdrops,apparentlybecausethefoodcouldfallintothehandsoftherebelsandtheirlocalsupporters.", "entities": [["Kinshasa", "loc", 0, 8]]}
+{"id": "conll-1178", "text": "RussBerriepresidenttoretireinJuly.", "entities": [["RussBerrie", "org", 0, 10]]}
+{"id": "conll-1873", "text": "--Milannewsroom+39266129502", "entities": [["Milan", "loc", 2, 7]]}
+{"id": "conll-577", "text": "AjaxAmsterdam18783231629", "entities": [["AjaxAmsterdam", "org", 0, 13]]}
+{"id": "conll-2641", "text": "\"It'sbeenasentimentaljourney...", "entities": []}
+{"id": "conll-2883", "text": "39,507", "entities": []}
+{"id": "conll-2934", "text": "RossCounty17836272327", "entities": [["RossCounty", "org", 0, 10]]}
+{"id": "conll-2365", "text": "ButIdon'tthinkitwouldbewisetoplayupthepoliticalaspectofthis.", "entities": []}
+{"id": "conll-1265", "text": "Anundeterminednumberofpeoplearereportedtohavebeenabductedandkilledoutsidethetownbytribalvigilantegroups.", "entities": []}
+{"id": "conll-101", "text": "InzamamulHaqstGermonbAstle2", "entities": [["InzamamulHaq", "per", 0, 12], ["Germon", "per", 14, 20], ["Astle", "per", 21, 26]]}
+{"id": "conll-2911", "text": "Falkirk17926181529", "entities": [["Falkirk", "org", 0, 7]]}
+{"id": "conll-1510", "text": "Therewerenoclashes.", "entities": []}
+{"id": "conll-1489", "text": "ChinatoopenportinHainantoforeignships.", "entities": [["China", "loc", 0, 5], ["Hainan", "loc", 17, 23]]}
+{"id": "conll-1888", "text": "Whenitreconvened,BJPdeputiesresumedtheslogan-shouting,anddeputyspeakerSurajBhansuspendedworkuntilMonday.", "entities": [["BJP", "org", 17, 20], ["SurajBhan", "per", 70, 79]]}
+{"id": "conll-1729", "text": "Corn4.415.187.00.622.111.1", "entities": []}
+{"id": "conll-371", "text": "NEWJERSEY14101616129", "entities": [["NEWJERSEY", "org", 0, 9]]}
+{"id": "conll-1633", "text": "RE:$25,000,000", "entities": []}
+{"id": "conll-2399", "text": "2.PernilaWiberg(Sweden)1:17.97", "entities": [["PernilaWiberg", "per", 2, 15], ["Sweden", "loc", 16, 22]]}
+{"id": "conll-2271", "text": "SangthaiGlory22/11/963,000Singapore", "entities": [["SangthaiGlory", "misc", 0, 13], ["Singapore", "loc", 26, 35]]}
+{"id": "conll-2041", "text": "\"Thecoldweatherforecastsarehelpingrightnow,\"atradersaid.", "entities": []}
+{"id": "conll-476", "text": "NEWJERSEYATBOSTON", "entities": [["NEWJERSEY", "org", 0, 9], ["BOSTON", "loc", 11, 17]]}
+{"id": "conll-1742", "text": "\"Weatherforecastshavebeensketchy.", "entities": []}
+{"id": "conll-2074", "text": "GENEVA1996-12-06", "entities": [["GENEVA", "loc", 0, 6]]}
+{"id": "conll-3287", "text": "SEATTLE155.750-", "entities": [["SEATTLE", "org", 0, 7]]}
+{"id": "conll-3072", "text": "Alloa3Hawick1", "entities": [["Alloa", "org", 0, 5], ["Hawick", "org", 6, 12]]}
+{"id": "conll-2458", "text": "5.HeidiZurbriggen(Switzerland)69", "entities": [["HeidiZurbriggen", "per", 2, 17], ["Switzerland", "loc", 18, 29]]}
+{"id": "conll-2011", "text": "Salesreportedon200headsteers;69,100headconfirmedforweektodatewhichincludes14,000formulatedand3,400contractedcattletobeshippedthisweek.", "entities": []}
+{"id": "conll-1630", "text": "BALANCE-Hartford,Conn.", "entities": [["Hartford", "loc", 8, 16], ["Conn", "loc", 17, 21]]}
+{"id": "conll-2148", "text": "PoliceseizeddozensofkilosofheroinwithastreetvalueofhundredsofmillionsofBelgianfrancs,apublicprosecutor'sofficespokesmanintheportcityofAntwerpsaid.", "entities": [["Belgian", "misc", 71, 78], ["Antwerp", "org", 134, 141]]}
+{"id": "conll-1059", "text": "Gorst'sofficesaidlatertheMPwouldnotfeelhimselfobligedtovotewiththegovernment.", "entities": [["Gorst", "per", 0, 5]]}
+{"id": "conll-1720", "text": "ExportsDomesticDisappearance", "entities": []}
+{"id": "conll-2310", "text": "Net6.205.36", "entities": []}
+{"id": "conll-1962", "text": "JERUSALEM1996-12-06", "entities": [["JERUSALEM", "loc", 0, 9]]}
+{"id": "conll-2101", "text": "Peopleheredon'tunderstandInternettechnology.", "entities": [["Internet", "misc", 25, 33]]}
+{"id": "conll-2121", "text": "InvestigatorshavesaidtheexplosionborethehallmarksofAlgerianMoslemfundamentalistswhostagedaseriesofbombingslastyearwhichkilledeightpeopleandinjuredmorethan160.", "entities": [["Algerian", "misc", 51, 59], ["Moslem", "misc", 59, 65]]}
+{"id": "conll-103", "text": "ShahidAfridibHarris2", "entities": [["ShahidAfridi", "per", 0, 12], ["Harris", "per", 13, 19]]}
+{"id": "conll-2357", "text": "SupplesaidthestrugglethatSingaporehadtowageinvyingtohostthemeetingwouldberepeatedduringthetalks.", "entities": [["Supple", "per", 0, 6], ["Singapore", "loc", 25, 34]]}
+{"id": "conll-919", "text": "areabsolutelyfundamental,\"Zieleniec,whoisalsovice-premierinthegovernment,toldReuters.", "entities": [["Zieleniec", "per", 26, 35], ["Reuters", "org", 77, 84]]}
+{"id": "conll-3136", "text": "Barbarians-Tries:AlanBateman,ScottQuinnell.", "entities": [["Barbarians", "org", 0, 10], ["AlanBateman", "per", 17, 28], ["ScottQuinnell", "per", 29, 42]]}
+{"id": "conll-528", "text": "WLTPFPA", "entities": []}
+{"id": "conll-3351", "text": "COLORADO17741006038", "entities": [["COLORADO", "org", 0, 8]]}
+{"id": "conll-200", "text": "LeaguedutiesrestrictedtheBarbarians'selectorialoptionsbuttheystillboast13internationalsincludingEnglandfull-backTimStimpsonandrecalledwingTonyUnderwood,plusAllBlackforwardsIanJonesandNormHewitt.", "entities": [["Barbarians", "org", 25, 35], ["England", "loc", 96, 103], ["TimStimpson", "per", 112, 123], ["TonyUnderwood", "per", 138, 151], ["AllBlack", "org", 156, 164], ["IanJones", "per", 172, 180], ["NormHewitt", "per", 183, 193]]}
+{"id": "conll-2886", "text": "Southampton0AstonVilla1(Townsend34).", "entities": [["Southampton", "org", 0, 11], ["AstonVilla", "org", 12, 22], ["Townsend", "per", 24, 32]]}
+{"id": "conll-2143", "text": "Moslemfundamentalistskilled19civiliansovernightinBlidaprovincesouthofAlgiers,AlgeriansecurityforcessaidonFriday.", "entities": [["Moslem", "misc", 0, 6], ["Blida", "loc", 49, 54], ["Algiers", "loc", 69, 76], ["Algerian", "misc", 77, 85]]}
+{"id": "conll-2746", "text": "5.LeeKyou-hyuk(SouthKorea)1:16.47", "entities": [["LeeKyou-hyuk", "per", 2, 14], ["SouthKorea", "loc", 15, 25]]}
+{"id": "conll-2938", "text": "Forfar15645262422", "entities": [["Forfar", "org", 0, 6]]}
+{"id": "conll-2548", "text": "16.PernillaWiberg(Sweden)1:49.88", "entities": [["PernillaWiberg", "per", 3, 17], ["Sweden", "loc", 18, 24]]}
+{"id": "conll-1758", "text": "PhysicalpricesatWahafortheweekendlostmorethan15centstothelow-to-mid$3.50sasmilderweathermovedintotheSouthwest.", "entities": [["Waha", "loc", 16, 20]]}
+{"id": "conll-1925", "text": "Theylost2.21percent,depressedbyawaveofnewCanadiansupply.", "entities": [["Canadian", "misc", 41, 49]]}
+{"id": "conll-583", "text": "NACBreda18639172921", "entities": [["NACBreda", "org", 0, 8]]}
+{"id": "conll-1974", "text": "TheviolencewasspurredbyIsrael'sopeninganentrancetoatunnelnearMoslemsitesinJerusalem.", "entities": [["Israel", "loc", 23, 29], ["Moslem", "misc", 61, 67], ["Jerusalem", "loc", 74, 83]]}
+{"id": "conll-937", "text": "Rosatididnotsaywhetherthepaymentin1970swaspartofthe1949agreementbetweenWarsawandSwitzerlandoncompensationtoSwisscitizenswhoseassetswereseizedbytheSoviet-imposedcommunistsauthoritiesafterWorldWarTwo.", "entities": [["Rosati", "per", 0, 6], ["Warsaw", "loc", 71, 77], ["Switzerland", "loc", 80, 91], ["Swiss", "misc", 107, 112], ["Soviet-imposed", "misc", 146, 160], ["WorldWarTwo", "misc", 186, 197]]}
+{"id": "conll-499", "text": "WLTPFPA", "entities": [["PA", "org", 5, 7]]}
+{"id": "conll-2566", "text": "ResultsofSaturday's", "entities": []}
+{"id": "conll-2870", "text": "Attendance:38,018", "entities": []}
+{"id": "conll-1871", "text": "TheItalianupperhouseSenatebudgetcommissionhasconcludeditsexaminationofItaly's1997budget,anditwillapprovethemeasureofficiallybySaturday.", "entities": [["Italian", "misc", 3, 10], ["Senate", "org", 20, 26], ["Italy", "loc", 70, 75]]}
+{"id": "conll-2761", "text": "9.ChrisWitty(U.S.)1:25.85", "entities": [["ChrisWitty", "per", 2, 12], ["U.S.", "loc", 13, 17]]}
+{"id": "conll-1922", "text": "Theweeklygovernmentbondindexrose0.07percentinlocalcurrencyterms.", "entities": []}
+{"id": "conll-2926", "text": "Stenhousemuir15456181217", "entities": [["Stenhousemuir", "org", 0, 13]]}
+{"id": "conll-2234", "text": "BolgersaidheexpectedagovernmenttobeformedbyThursday.", "entities": [["Bolger", "per", 0, 6]]}
+{"id": "conll-1028", "text": "GasoilerasedThursday'sgains,plunging$5.50atonneinlinewiththescreen.", "entities": []}
+{"id": "conll-2292", "text": "China'stouristspotofGuilininthesouthernregionofGuangxiwillopenitsairporttoforeignaircraft,theXinhuanewsagencysaidonFriday.", "entities": [["China", "loc", 0, 5], ["Guilin", "loc", 20, 26], ["Guangxi", "loc", 47, 54], ["Xinhua", "org", 93, 99]]}
+{"id": "conll-1646", "text": "12/15/20081,200M4.954.95", "entities": []}
+{"id": "conll-2743", "text": "2.SergeyKlevchenya(Russia)1:16.31", "entities": [["SergeyKlevchenya", "per", 2, 18], ["Russia", "loc", 19, 25]]}
+{"id": "conll-1260", "text": "SoldiersstagedmutiniesinAprilandMay,withFrenchtroopssteppinginwithtanksandhelicopterstoquellthemoreseriousseconduprising.", "entities": [["French", "misc", 40, 46]]}
+{"id": "conll-2245", "text": "Halversonwasconsideringpossibledatesfortheby-election,hisofficesaid.", "entities": [["Halverson", "per", 0, 9]]}
+{"id": "conll-3275", "text": "WESTERNCONFERENCE", "entities": []}
+{"id": "conll-2649", "text": "Icamehereonzeroandleftatthree(agedthree)whenmyfatherwastransferredtoCalcuttawhereIspentanotherfourandhalfyears.", "entities": [["Calcutta", "loc", 68, 76]]}
+{"id": "conll-2055", "text": "ItisinexplicabletouswhyhewouldhavebeenallowedtoleaveGreecebeforeservinghisjustsentence...Thisisanincomprehensiblemove.", "entities": [["Greece", "loc", 52, 58]]}
+{"id": "conll-2860", "text": "I'vealsogotacontracttoplayforNewSouthWalesintheSuper12nextyear.\"", "entities": [["NewSouthWales", "org", 29, 42]]}
+{"id": "conll-1961", "text": "PLOsaysArafat,NetanyahucouldmeetSaturday.", "entities": [["PLO", "org", 0, 3], ["Arafat", "per", 7, 13], ["Netanyahu", "per", 14, 23]]}
+{"id": "conll-3296", "text": "LACLIPPERSATNEWYORK", "entities": [["LACLIPPERS", "org", 0, 10], ["NEWYORK", "loc", 12, 19]]}
+{"id": "conll-1773", "text": "Grainandsoybeanreceiptsandshipments,inbushels,atdeliverylocationsfortheprevioustradingday,accordingtotheChicagoBoardofTrade-", "entities": [["ChicagoBoardofTrade", "org", 104, 123]]}
+{"id": "conll-829", "text": "Lazio(12)vASRoma(7)1930", "entities": [["Lazio", "org", 0, 5], ["ASRoma", "org", 10, 16]]}
+{"id": "conll-1205", "text": "DoyouthinkthatIwouldhaveaconscienceproblemdoingitornotatthattime?", "entities": []}
+{"id": "conll-3407", "text": "TheirothermarksmenwereBraziliandefenderVampetaandBelgianstrikerLucNilis,his14thoftheseason.", "entities": [["Brazilian", "misc", 22, 31], ["Vampeta", "per", 39, 46], ["Belgian", "misc", 49, 56], ["LucNilis", "per", 63, 71]]}
+{"id": "conll-1101", "text": "Source:ManitobaPork.", "entities": [["ManitobaPork", "org", 7, 19]]}
+{"id": "conll-37", "text": "TakuyaTakagiheadedthewinnerinthe88thminuteofthegroupCgameaftergoalkeeperSalemBitarspoiledamistake-freedisplaybyallowingtheballtoslipunderhisbody.", "entities": [["TakuyaTakagi", "per", 0, 12], ["SalemBitar", "per", 72, 82]]}
+{"id": "conll-135", "text": "Result:Pakistanwonby46runs.", "entities": [["Pakistan", "loc", 7, 15]]}
+{"id": "conll-613", "text": "HamburgerSV16457202517", "entities": [["HamburgerSV", "org", 0, 11]]}
+{"id": "conll-2685", "text": "2.KazuyoshiFunaki(Japan)295.4(151.5/143.9)", "entities": [["KazuyoshiFunaki", "per", 2, 17], ["Japan", "loc", 18, 23]]}
+{"id": "conll-2446", "text": "Nation:Austria", "entities": [["Austria", "loc", 7, 14]]}
+{"id": "conll-1876", "text": "TheEuropeanUnionandPolandhaveresolveddisagreementsoveranewPolishoilimportregime,theEuropeanCommissionsaidonFriday.", "entities": [["EuropeanUnion", "org", 3, 16], ["Poland", "loc", 19, 25], ["Polish", "misc", 58, 64], ["EuropeanCommission", "org", 83, 101]]}
+{"id": "conll-3291", "text": "GOLDENSTATE613.31681/2", "entities": [["GOLDENSTATE", "org", 0, 11]]}
+{"id": "conll-2141", "text": "Moslemfundamentalistskill19Algerians-agency.", "entities": [["Moslem", "misc", 0, 6], ["Algerians", "misc", 27, 36]]}
+{"id": "conll-2005", "text": "TradeveryslowinthePanhandleareaThursday.", "entities": [["Panhandle", "loc", 18, 27]]}
+{"id": "conll-1474", "text": "EastTimoreseRomanCatholicBishopCarlosBeloleftDilionFridayonhiswaytoNorwayfortheawardsceremonyasco-recipientofthe1996NobelPeacePrize.", "entities": [["EastTimorese", "misc", 0, 12], ["RomanCatholic", "misc", 12, 25], ["CarlosBelo", "per", 31, 41], ["Dili", "loc", 45, 49], ["Norway", "loc", 67, 73], ["NobelPeacePrize", "misc", 116, 131]]}
+{"id": "conll-818", "text": "SOCCER-ITALIANFIRSTDIVISIONMATCHESTHISWEEKEND.", "entities": [["ITALIAN", "misc", 7, 14]]}
+{"id": "conll-1065", "text": "LONDON1996-12-06", "entities": [["LONDON", "loc", 0, 6]]}
+{"id": "conll-2837", "text": "SOCCER-SCOTTISHPREMIERDIVISIONSUMMARIES.", "entities": [["SCOTTISH", "misc", 7, 15]]}
+{"id": "conll-1988", "text": "Theycancomeinandouteasilyastheminefieldsarenotanobstacle,\"itsaid.", "entities": []}
+{"id": "conll-1911", "text": "UKbookmakerslengthenConservativevictoryodds.", "entities": [["UK", "loc", 0, 2], ["Conservative", "misc", 20, 32]]}
+{"id": "conll-2094", "text": "AlexanderBavykin,deputylegalchiefatRussia'sforeignministry,saidMoscowhadyettoformulateapolicyoncopyrightincybersppace.", "entities": [["AlexanderBavykin", "per", 0, 16], ["Russia", "loc", 35, 41], ["Moscow", "loc", 63, 69]]}
+{"id": "conll-3140", "text": "Leadingthirdroundscoresinthe", "entities": []}
+{"id": "conll-3384", "text": "Galleysufferedaconcussionanddidnotreturntothegame.", "entities": [["Galley", "per", 0, 6]]}
+{"id": "conll-2036", "text": "*frompreviouscalculationonNov27", "entities": []}
+{"id": "conll-3309", "text": "DETROIT93Cleveland81", "entities": [["DETROIT", "org", 0, 7], ["Cleveland", "org", 9, 18]]}
+{"id": "conll-1778", "text": "Toledo61,5140", "entities": [["Toledo", "loc", 0, 6]]}
+{"id": "conll-2284", "text": "SEOUL1996-12-06", "entities": [["SEOUL", "loc", 0, 5]]}
+{"id": "conll-2719", "text": "Men's500metresfirstround:1.", "entities": []}
+{"id": "conll-137", "text": "SOCCER-ENGLISHF.A.CUPSECONDROUNDRESULT.", "entities": [["ENGLISHF.A.CUP", "misc", 7, 21]]}
+{"id": "conll-3405", "text": "AMSTERDAM1996-12-07", "entities": [["AMSTERDAM", "loc", 0, 9]]}
+{"id": "conll-1188", "text": "JonathanWright", "entities": [["JonathanWright", "per", 0, 14]]}
+{"id": "conll-1297", "text": "AmeetingwiththePopeisalsoplanned,\"DariuszRosatitoldanewsconference.", "entities": [["DariuszRosati", "per", 34, 47]]}
+{"id": "conll-1874", "text": "EU,Polandagreeonoilimporttariffs.", "entities": [["EU", "org", 0, 2], ["Poland", "loc", 3, 9]]}
+{"id": "conll-3325", "text": "HARTFORD1276777630", "entities": [["HARTFORD", "org", 0, 8]]}
+{"id": "conll-402", "text": "NHLICEHOCKEY-THURSDAY'SRESULTS.", "entities": [["NHL", "org", 0, 3]]}
+{"id": "conll-1795", "text": "WhiteHousespokesmanMikeMcCurrysaidClinton\"planstohaveregularnewsconferences\"duringhissecondterm.", "entities": [["WhiteHouse", "loc", 0, 10], ["MikeMcCurry", "per", 19, 30], ["Clinton", "per", 34, 41]]}
+{"id": "conll-2823", "text": "Englishdivisionone", "entities": [["English", "misc", 0, 7]]}
+{"id": "conll-3215", "text": "HapoelPetahTikva12921271329", "entities": [["HapoelPetahTikva", "org", 0, 16]]}
+{"id": "conll-2110", "text": "ROME1996-12-06", "entities": [["ROME", "loc", 0, 4]]}
+{"id": "conll-1060", "text": "Hesaidatonepointduringapressconference:\"Ihaveseenmywhip(partymanager)fornextweekwhich,ofcourse,doesn'tmeanverymuchtomenow.\"", "entities": []}
+{"id": "conll-1855", "text": "Theprotest,whichattractedseveralthousandsupporters,coincidedwiththe18thanniversaryofSpain'sconstitution.", "entities": [["Spain", "loc", 84, 89]]}
+{"id": "conll-749", "text": "Enrique", "entities": [["Enrique", "per", 0, 7]]}
+{"id": "conll-1743", "text": "NowtheNationalWeatherServiceiscallingforabove-normaltemperaturesinmorethanhalfoftheU.S.,\"onefuturestradersaid.", "entities": [["NationalWeatherService", "org", 6, 28], ["U.S.", "loc", 83, 87]]}
+{"id": "conll-2981", "text": "Huddersfield22778252828", "entities": [["Huddersfield", "org", 0, 12]]}
+{"id": "conll-263", "text": "C.Walshnotout8", "entities": [["C.Walsh", "per", 0, 7]]}
+{"id": "conll-2656", "text": "freestyleskiingaerialscompetitiononSaturday:", "entities": []}
+{"id": "conll-1091", "text": "Jun9777.5377.2473.1774.62-79.35", "entities": []}
+{"id": "conll-1516", "text": "OnTuesdayandWednesday,oppositionleaderAungSanSuuKyiwasrestrictedtoherhomebythemilitarygovernmenttopreventherfrombeingdrawnintotheprotests.", "entities": [["AungSanSuuKyi", "per", 38, 51]]}
+{"id": "conll-395", "text": "ANAHEIMATBUFFALO", "entities": [["ANAHEIM", "org", 0, 7], ["BUFFALO", "loc", 9, 16]]}
+{"id": "conll-797", "text": "ROME1996-12-06", "entities": [["ROME", "loc", 0, 4]]}
+{"id": "conll-3061", "text": "Dundee2Falkirk0", "entities": [["Dundee", "org", 0, 6], ["Falkirk", "org", 7, 14]]}
+{"id": "conll-1684", "text": "Demandandsellerinterestlight.", "entities": []}
+{"id": "conll-599", "text": "forgoalsagainstpoints):", "entities": []}
+{"id": "conll-1840", "text": "FourAfricanstatesarereadytonominatecandidatesforthepostofU.N.secretary-generalonFridaynowthatBoutrosBoutros-Ghalihastemporarilyputasidehisbidforre-election.", "entities": [["African", "misc", 4, 11], ["U.N.", "org", 57, 61], ["BoutrosBoutros-Ghali", "per", 93, 113]]}
+{"id": "conll-57", "text": "5.KorneilusHole(Norway)23.92", "entities": [["KorneilusHole", "per", 2, 15], ["Norway", "loc", 16, 22]]}
+{"id": "conll-377", "text": "CENTRALDIVISION", "entities": [["CENTRALDIVISION", "misc", 0, 15]]}
+{"id": "conll-0", "text": "SOCCER-JAPANGETLUCKYWIN,CHINAINSURPRISEDEFEAT.", "entities": [["JAPAN", "loc", 7, 12], ["CHINA", "per", 24, 29]]}
+{"id": "conll-1848", "text": "ThemovebytheAfricanstatesmeansthatthecouncilcouldbeginvotingoncandidatesnextweek,aprocedurethatcouldeitherresultinadecisionorturnintoabitterfightwithvetoesagainsteachnominee.", "entities": [["African", "misc", 12, 19]]}
+{"id": "conll-2378", "text": "ZAANDAM,Netherlands1996-12-06", "entities": [["ZAANDAM", "loc", 0, 7], ["Netherlands", "loc", 8, 19]]}
+{"id": "conll-2238", "text": "PetersleftameetingbetweenNZFirstandNationalnegotiatorstospend20minutesspeakingtoLabourleaderHelenClark.", "entities": [["Peters", "per", 0, 6], ["NZFirst", "org", 25, 32], ["National", "org", 35, 43], ["Labour", "org", 80, 86], ["HelenClark", "per", 92, 102]]}
+{"id": "conll-3425", "text": "AthleticBilbao15744282225", "entities": [["AthleticBilbao", "org", 0, 14]]}
+{"id": "conll-340", "text": "GroupB", "entities": []}
+{"id": "conll-2499", "text": "2.HildeGerg(Germany)130", "entities": [["HildeGerg", "per", 2, 11], ["Germany", "loc", 12, 19]]}
+{"id": "conll-3251", "text": "NEWYORK1996-12-07", "entities": [["NEWYORK", "loc", 0, 7]]}
+{"id": "conll-814", "text": "Thetwomenwerehitinthepelvisandleg.", "entities": []}
+{"id": "conll-1015", "text": "IndustrysourcessaidtherewasnonewdateforfreshtalksandblamedthedeadlockonuncertaintyoverwhethertheBritishAirways-Americandealwouldbecleared.", "entities": [["BritishAirways-American", "misc", 96, 119]]}
+{"id": "conll-494", "text": "BUFFALO940267215", "entities": [["BUFFALO", "org", 0, 7]]}
+{"id": "conll-2543", "text": "11.HeidiZurbriggen(Switzerland)1:49.65", "entities": [["HeidiZurbriggen", "per", 3, 18], ["Switzerland", "loc", 19, 30]]}
+{"id": "conll-182", "text": "GroupD", "entities": []}
+{"id": "conll-3079", "text": "matchesonSaturday:", "entities": []}
+{"id": "conll-1099", "text": "Manitoba'sHogPriceRange:84.00-86.00percwt", "entities": [["Manitoba", "org", 0, 8]]}
+{"id": "conll-2738", "text": "AlenaKoroleva(Russia)41.64;9.", "entities": [["AlenaKoroleva", "per", 0, 13], ["Russia", "loc", 14, 20]]}
+{"id": "conll-3103", "text": "Barnet3Wycombe3", "entities": [["Barnet", "org", 0, 6], ["Wycombe", "org", 7, 14]]}
+{"id": "conll-2602", "text": "TIGNES,France1996-12-07", "entities": [["TIGNES", "loc", 0, 6], ["France", "loc", 7, 13]]}
