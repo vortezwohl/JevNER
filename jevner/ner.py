@@ -218,13 +218,16 @@ visible on at least one side), so 50% overlap suffices — half the
 requests of the BertNER 25% step.
 """
 
-DEFAULT_MAX_WORKERS = 8
+DEFAULT_MAX_WORKERS = 16
 """Default in-flight request limit (the asyncio semaphore width).
 
 The bottleneck is gateway round-trips and rate limiting, not local
 CPU; this bounds how many requests (windows, detection batches,
 recheck batches, typing batches, gender batches) may be in flight at
-once on the private event loop. 0 or 1 serializes requests.
+once on the private event loop. 0 or 1 serializes requests. Gateway
+load test (2026-11-05): 16 and 32 concurrent requests completed with
+zero errors; throughput saturates around 24, so values beyond that
+add queueing without speed.
 """
 
 DETECT_CACHE_CAPACITY = 128
@@ -269,12 +272,18 @@ Typing demands fine semantic judgment; large batches dilute the
 model NONE verdicts on fragment spans (in-batch interference), so
 small batches are markedly more stable."""
 
-DETECT_BATCH_SIZE = 64
+DETECT_BATCH_SIZE = 128
 """Detection questions per request.
 
-Aligned with the typing batch: detection suffers the same in-batch
-interference — at 256 per batch, two-character Chinese place names
-had their Noul scores diluted into misses, while 64 stays stable."""
+Server-side cost of extra questions in one request is ~zero (the
+decision model answers the whole batch in one forward pass), so the
+batch size trades only request-body bytes against REQUEST COUNT —
+and request count is what the gateway's per-second ceiling meters.
+128 keeps the batch well inside the 65KB body budget; the former 64
+was set when per-question latency was assumed to scale with batch
+size. Quality is guarded by the frozen dev benchmark (in-batch score
+dilution was observed at 256 under the old schema; re-verified at
+128 under the current one)."""
 
 DETECT_PROB_THRESHOLD = 0.25
 """Noul decision threshold for token detection.
@@ -426,6 +435,20 @@ NOMINATE_MIN = 0.10
 """Probability floor for a nominated option to be accepted."""
 
 NOMINATE_POOL_MAX = 63
+"""Unique surface-form cap for window-wide nomination pools.
+
+At or below it the window nominates as ONE option pool (maximum
+competition); above it nomination switches per region so distinct
+picks are not capped by the round budget on entity-dense long docs."""
+
+LATENCY_FIRST_MAX_TOKENS = 64
+"""Token cap for the latency_first fast path.
+
+The fast path flat-types every viable sub-span of the text in ONE
+parallel wave (no detection round trip), so its request count grows
+quadratically with token count; at 64 tokens it stays within about
+two concurrency waves on the default semaphore. Texts above the cap
+silently use the normal pipeline."""
 """Unique surface-form cap for window-wide nomination pools.
 
 At or below it the window nominates as ONE option pool (maximum
@@ -686,6 +709,7 @@ class JevNER:
         max_workers: int = DEFAULT_MAX_WORKERS,
         typing_strategy: str = "compete",
         disk_cache_path: str | Path | None = None,
+        latency_first: bool = False,
         taxonomy: EntityTaxonomy | None = None,
     ) -> None:
         """Initialize the recognizer.
@@ -713,6 +737,13 @@ class JevNER:
             disk_cache_path: Optional sqlite file persisting gateway
                 answers across processes (repeat runs cost zero
                 requests); None keeps everything in-process only.
+            latency_first: Skip the token-detection round trip for
+                sentence-scale inputs (<= LATENCY_FIRST_MAX_TOKENS
+                tokens): every locally viable sub-span is flat-typed
+                in one parallel wave, cutting the serial chain to a
+                single round trip. Typing runs flat (compete is
+                ignored on the fast path); texts above the token cap
+                use the normal pipeline.
             taxonomy: Entity type system (type/pack registries and
                 default packs); None uses the built-in system. Consumer
                 users can pass EntityTaxonomy.from_json(...) results.
@@ -748,6 +779,7 @@ class JevNER:
         if typing_strategy not in ("flat", "compete"):
             raise ValueError(f'typing_strategy ({typing_strategy!r}) must be "flat" or "compete".')
         self._typing_strategy = typing_strategy
+        self._latency_first = bool(latency_first)
         # Private event loop: started lazily on first use, one daemon thread.
         # All coroutines (and the AsyncTypeSafeClient) live on it; both the
         # sync facade and arecognize submit work there, so the HTTP client
@@ -1197,6 +1229,7 @@ class JevNER:
         base: int,
         entity_types: tuple[EntityType, ...],
         prob_threshold: float,
+        skip_detection: bool = False,
     ) -> list[Entity]:
         """Run detection and typing for one window; returns its entities.
 
@@ -1233,9 +1266,18 @@ class JevNER:
             Entities recognized in this window (not yet merged across
             windows), offsets anchored to the source.
         """
-        _, hits, strict_regions, scores = await self._detect_regions(
-            source, window_text, tokens, base
-        )
+        if skip_detection:
+            # Fast path: the whole window is one candidate region; no
+            # detection round trip, so no edge-score prior either.
+            hits: list[int] = []
+            strict_regions = [tokens]
+            scores: dict[int, float] = {}
+            edge_score_min = 0.0
+        else:
+            _, hits, strict_regions, scores = await self._detect_regions(
+                source, window_text, tokens, base
+            )
+            edge_score_min = EDGE_SCORE_MIN
         # Token offset pair -> Noul score: the free boundary prior for span
         # pruning (an entity's edge tokens score high; weak edges are junk).
         score_by_offset = {(tok[0], tok[1]): scores.get(idx, 0.0) for idx, tok in enumerate(tokens)}
@@ -1272,11 +1314,11 @@ class JevNER:
                     if bad_span_edge(text):
                         continue
                     if (
-                        score_by_offset.get((region[i][0], region[i][1]), 0.0) < EDGE_SCORE_MIN
+                        score_by_offset.get((region[i][0], region[i][1]), 0.0) < edge_score_min
                         or score_by_offset.get(
                             (region[i + length - 1][0], region[i + length - 1][1]), 0.0
                         )
-                        < EDGE_SCORE_MIN
+                        < edge_score_min
                     ):
                         continue
                     seen.add((text, start, end))
@@ -1294,7 +1336,7 @@ class JevNER:
         # Competition typing (A3): spans compete as Choice options first; the
         # shortlist goes through the same flat typing below. Skipped for small
         # candidate sets where flat typing everything is cheaper.
-        if self._typing_strategy == "compete":
+        if self._typing_strategy == "compete" and not skip_detection:
             keep = await self._compete_nominate(typing_text, spans, region_ids, entity_types)
             if not any(keep):
                 return []
@@ -1757,6 +1799,7 @@ class JevNER:
         stride: int | None,
         deduplicate: bool,
         flatten_fragments: bool,
+        latency_first: bool | None,
     ) -> list[EntityNode]:
         """Async recognition core (the whole pipeline); parameter meanings
         and exceptions are documented on __call__."""
@@ -1795,19 +1838,38 @@ class JevNER:
         # shared semaphore). Sequential (or single-window) runs preserve the
         # thread-pool-era error semantics: failures propagate; the concurrent
         # path logs and skips failed windows as empty results.
+        # latency_first: windows within the token cap skip the detection
+        # round trip entirely (flat typing of every viable sub-span).
+        # None on the call inherits the constructor's latency_first.
+        lf = self._latency_first if latency_first is None else latency_first
+        skips = [
+            lf and not fast_mode and len(toks) <= LATENCY_FIRST_MAX_TOKENS
+            for _wt, toks, _base in windows
+        ]
         if len(windows) <= 1 or self._max_workers <= 1:
             window_entities = [
-                await self._type_window(s, window_text, toks, base, types, prob_threshold)
-                for window_text, toks, base in windows
+                await self._type_window(
+                    s, window_text, toks, base, types, prob_threshold, skip_detection=skip
+                )
+                for (window_text, toks, base), skip in zip(windows, skips, strict=True)
             ]
         else:
 
             async def _guarded_window(
-                window_text: str, toks: list[tuple[int, int, str]], base: int
+                window_text: str,
+                toks: list[tuple[int, int, str]],
+                base: int,
+                skip: bool,
             ) -> list[Entity]:
                 try:
                     return await self._type_window(
-                        s, window_text, toks, base, types, prob_threshold
+                        s,
+                        window_text,
+                        toks,
+                        base,
+                        types,
+                        prob_threshold,
+                        skip_detection=skip,
                     )
                 except Exception as exc:
                     logger.warning("JevNER window failed: %s\n%s", exc, traceback.format_exc())
@@ -1815,7 +1877,10 @@ class JevNER:
 
             window_entities = list(
                 await asyncio.gather(
-                    *(_guarded_window(wt, toks, base) for wt, toks, base in windows)
+                    *(
+                        _guarded_window(wt, toks, base, skip)
+                        for (wt, toks, base), skip in zip(windows, skips, strict=True)
+                    )
                 )
             )
         entities: list[Entity] = [e for ents in window_entities for e in ents]
@@ -1885,6 +1950,7 @@ class JevNER:
         stride: int | None = None,
         deduplicate: bool = True,
         flatten_fragments: bool = False,
+        latency_first: bool | None = None,
     ) -> list[EntityNode]:
         """Recognize named entities in a text; returns the nesting forest.
 
@@ -1914,6 +1980,10 @@ class JevNER:
                 window_size // 2.
             deduplicate: Whether to merge cross-window duplicates per
                 occurrence (type union).
+            latency_first: Skip the detection round trip on
+                sentence-scale inputs (see the constructor docstring);
+                one serial round trip total. None inherits the
+                constructor setting.
             flatten_fragments: Flat-F1 convention mode (default False):
                 drop entities contained by a same-type entity and merge
                 same-type neighbors split by delimiters — serves flat
@@ -1949,6 +2019,7 @@ class JevNER:
                 stride=stride,
                 deduplicate=deduplicate,
                 flatten_fragments=flatten_fragments,
+                latency_first=latency_first,
             )
         )
 
@@ -1965,6 +2036,7 @@ class JevNER:
         stride: int | None = None,
         deduplicate: bool = True,
         flatten_fragments: bool = False,
+        latency_first: bool | None = None,
     ) -> list[EntityNode]:
         """Async twin of __call__: the same pipeline, awaitable.
 
@@ -1987,6 +2059,7 @@ class JevNER:
                 stride=stride,
                 deduplicate=deduplicate,
                 flatten_fragments=flatten_fragments,
+                latency_first=latency_first,
             ),
             loop,
         )

@@ -168,7 +168,11 @@ async def amain(args: argparse.Namespace) -> int:
     git = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, cwd=HERE.parent
     )
-    ner = JevNER(max_workers=args.max_workers, typing_strategy=args.typing_strategy)
+    ner = JevNER(
+        max_workers=args.max_workers,
+        typing_strategy=args.typing_strategy,
+        latency_first=args.latency_first,
+    )
     report: dict[str, Any] = {
         "tag": args.tag,
         "meta": {
@@ -180,6 +184,7 @@ async def amain(args: argparse.Namespace) -> int:
             "max_workers": args.max_workers,
             "typing_strategy": args.typing_strategy,
             "flatten": args.flatten,
+            "latency_first": args.latency_first,
         },
         "datasets": {},
         "languages": None,
@@ -225,6 +230,9 @@ def main() -> int:
     ap.add_argument("--max-workers", type=int, default=8)
     ap.add_argument(
         "--typing-strategy", choices=["flat", "compete"], default="flat", help="A3 A/B switch"
+    )
+    ap.add_argument(
+        "--latency-first", action="store_true", help="skip detection on short texts (fast path)"
     )
     ap.add_argument("--flatten", action="store_true", help="flatten_fragments mode (A7 A/B switch)")
     ap.add_argument("--no-languages", dest="languages", action="store_false")
