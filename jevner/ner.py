@@ -8,10 +8,10 @@ design replaces BertNER fixed n-gram candidates so any language works:
 
 1. Detection: the bundled Qwen3 tokenizer splits each window into a
    token sequence; every token becomes one Noul question ("is this
-   token part of a named entity?") submitted in batches and answered
-   in parallel. This mirrors the base model token-level prediction in
-   BertNER, is language-agnostic, and is free of fixed n-gram length
-   assumptions.
+   token part of a named entity?") submitted in batches, with all
+   batches of a window in flight at once. This mirrors the base model
+   token-level prediction in BertNER, is language-agnostic, and is
+   free of fixed n-gram length assumptions.
 2. Typing: contiguous hit tokens reassemble into entity regions; every
    contiguous sub-span within a region (nesting included) becomes one
    Choice question (labels = enabled entity types + NONE) submitted in
@@ -25,28 +25,44 @@ design replaces BertNER fixed n-gram candidates so any language works:
    gender (Choice: MALE/FEMALE/UNKNOWN), with results written to an
    in-process LRU cache to avoid duplicate requests.
 
-What callers and maintainers need to know first:
-- This class loads no local neural weights; the only external
-  dependency is the gateway API.
-- Choice probabilities are a competitive distribution normalized
-  across options, so NONE probability naturally carries the
-  "not an entity" confidence, and prob_threshold filters on the
-  selected type own probability.
-- Detection and typing questions are batched by their own sizes so a
-  single request never exceeds the gateway request-body and
-  total-option hard limits.
+Concurrency architecture (what callers and maintainers need first):
+- All gateway I/O runs as coroutines on AsyncTypeSafeClient, on ONE
+  private event loop owned by the instance (a single daemon thread —
+  replacing the former ThreadPool). A single asyncio.Semaphore
+  (max_workers) bounds in-flight requests; the sync __call__ facade
+  and the async arecognize() entry both submit onto that same loop, so
+  the HTTP client never crosses event loops (httpx AsyncClient is not
+  loop-safe).
+- Within a window, detection batches are independent questions and all
+  fly concurrently; gray-zone recheck rounds are independent resamples
+  of the same token set, so they also fly concurrently — the max over
+  concurrent samples equals the old sequential-rounds result.
+- Error semantics are preserved from the thread-pool era: detection
+  failures propagate to the caller; typing-batch and window failures
+  in the concurrent path are logged and skipped as empty results.
+- What callers can rely on: __call__ stays synchronous and may be
+  invoked from any thread (concurrent calls interleave on the private
+  loop under the shared semaphore); awaitables should use arecognize.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
-from collections.abc import Iterable
-from typing import Protocol, Self, cast
+import threading
+import traceback
+from collections.abc import Coroutine, Iterable, Mapping
+from typing import Any, Protocol, Self, TypeVar, cast
 
-from typesafe_sdk import Choice, Noul, RetryPolicy, TypeSafeClient
+from typesafe_sdk import (
+    AsyncTypeSafeClient,
+    Choice,
+    Noul,
+    RetryPolicy,
+    SystemOneResponse,
+)
 from vortezwohl.cache import LRUCache
-from vortezwohl.concurrent import ThreadPool
 from vortezwohl.iter import batched
 
 from jevner.entities import (
@@ -66,6 +82,9 @@ from jevner.prompt import render_detection_state, render_gender_state, render_ty
 from jevner.tokenizer import BundledTokenizer, strip_span
 
 logger = logging.getLogger("jevner")
+
+T = TypeVar("T")
+"""Type variable for private-loop submission helpers."""
 
 DEFAULT_MODEL = "baseten/mammoth-1"
 """Default model: Mammoth 1 hosted on BaseTen (routed through the same
@@ -127,7 +146,8 @@ The window follows the tighter of two caps:
 
 Very long documents (millions of tokens) are handled by sliding
 windows + window-level parallelism: 12k tokens per window, 50%
-adjacent overlap, windows submitted concurrently on a thread pool.
+adjacent overlap, windows submitted concurrently on the private
+event loop.
 """
 
 DEFAULT_STRIDE_DIVISOR = 2
@@ -140,11 +160,12 @@ requests of the BertNER 25% step.
 """
 
 DEFAULT_MAX_WORKERS = 8
-"""Default thread count for window-level parallelism.
+"""Default in-flight request limit (the asyncio semaphore width).
 
 The bottleneck is gateway round-trips and rate limiting, not local
-CPU; 8-way concurrency compresses multi-window latency within the
-rate limits. 0 or 1 degrades to sequential execution.
+CPU; this bounds how many requests (windows, detection batches,
+recheck batches, typing batches, gender batches) may be in flight at
+once on the private event loop. 0 or 1 serializes requests.
 """
 
 DETECT_CACHE_CAPACITY = 128
@@ -178,7 +199,8 @@ A Choice question carries (enabled types + NONE) options, so the
 per-batch question count is computed as 512 / options per question
 (e.g. CORE 20 options -> 25 questions per batch), keeping every
 request within the limit under any taxonomy (custom multi-type
-included)."""
+included).
+"""
 
 TYPING_BATCH_SIZE = 64
 """Upper bound on typing questions per request (further narrowed by
@@ -267,9 +289,14 @@ class _Cache(Protocol):
 class JevNER:
     """A sliding-window multilingual entity recognizer over gateway models.
 
-    Usage mirrors BertNER: construct once, call repeatedly.
-    Credentials default to the TYPESAFE_API_KEY / TYPESAFE_BASE_URL
-    environment variables and may also be passed explicitly.
+    Usage mirrors BertNER: construct once, call repeatedly. Credentials
+    default to the TYPESAFE_API_KEY / TYPESAFE_BASE_URL environment
+    variables and may also be passed explicitly.
+
+    Concurrency: every gateway request is a coroutine on one private
+    event loop (a single daemon thread), bounded by an in-flight
+    semaphore of max_workers. The synchronous call operator works from
+    any thread; async callers should await arecognize().
     """
 
     def __init__(
@@ -296,8 +323,9 @@ class JevNER:
                 None.
             window_size: Sliding-window size in tokens (default 12k,
                 derived from the request-body byte budget).
-            max_workers: Window-level concurrency; 0 or 1 runs
-                sequentially.
+            max_workers: In-flight request limit (the semaphore
+                width on the private event loop); 0 or 1 serializes
+                requests.
             taxonomy: Entity type system (type/pack registries and
                 default packs); None uses the built-in system. Consumer
                 users can pass EntityTaxonomy.from_json(...) results.
@@ -311,7 +339,7 @@ class JevNER:
         # Retry: 3 exponential-backoff attempts on 408/429/5xx and connection errors
         # (the default 30s total budget is too short — transient 500/520s
         # get abandoned early); uncapped, bounded by max_retries
-        self._client = TypeSafeClient(
+        self._client = AsyncTypeSafeClient(
             api_key=api_key,
             base_url=base_url,
             model=model_name,
@@ -323,13 +351,23 @@ class JevNER:
         # Entity type system: type/pack registries + default packs, the single
         # source of type semantics; users extend or override via JSON
         self._taxonomy = taxonomy if taxonomy is not None else DEFAULT_TAXONOMY
-        # Window-level thread pool: windows (long documents) submit detection and
-        # typing requests concurrently. Thread safety: httpx2.Client pools connections.
+        # In-flight request limit: one asyncio.Semaphore bounds windows,
+        # detection batches, recheck batches, typing batches, and gender
+        # batches alike — the global rate the old thread pool provided.
         self._max_workers = max(1, max_workers)
-        self._pool = ThreadPool(max_workers=self._max_workers)
+        # Private event loop: started lazily on first use, one daemon thread.
+        # All coroutines (and the AsyncTypeSafeClient) live on it; both the
+        # sync facade and arecognize submit work there, so the HTTP client
+        # never crosses event loops (httpx AsyncClient is not loop-safe).
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_thread: threading.Thread | None = None
+        self._loop_lock = threading.Lock()
+        self._semaphore: asyncio.Semaphore | None = None
         # Three in-process LRU caches: detection (window -> hit tokens), typing
         # (window + span -> type tuples), gender (name -> judgment).
         # Repeated text / overlapping windows / repeated names all hit cache.
+        # Single-threaded under the event loop: no await between read and
+        # write, so plain dict-based LRU access needs no locking.
         self._detect_cache: _Cache = LRUCache(capacity=DETECT_CACHE_CAPACITY)
         self._typing_cache: _Cache = LRUCache(capacity=TYPING_CACHE_CAPACITY)
         self._gender_cache: _Cache = LRUCache(capacity=GENDER_CACHE_CAPACITY)
@@ -340,7 +378,130 @@ class JevNER:
             self._max_workers,
         )
 
-    def _detect_regions(
+    # ------------------------------------------------------------------
+    # Private-loop plumbing
+    # ------------------------------------------------------------------
+
+    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
+        """Start the private event loop thread once and return its loop.
+
+        All async work (and the shared AsyncTypeSafeClient) must run on
+        this single loop: httpx AsyncClient connections are not safe to
+        use across event loops, so both the sync facade and arecognize
+        submit coroutines here instead of running their own loops.
+
+        Returns:
+            The private event loop (running in its daemon thread).
+        """
+        with self._loop_lock:
+            # Gate on is_closed(), never is_running(): the loop thread signals
+            # `started` before entering run_forever, so is_running() has a legal
+            # False window here and would spuriously spawn a second loop.
+            # is_closed() is monotonic (a loop never reopens), and submissions
+            # via call_soon_threadsafe queue fine on an open not-yet-running loop.
+            if self._loop is None or self._loop.is_closed():
+                started = threading.Event()
+
+                def _run_loop() -> None:
+                    loop = asyncio.new_event_loop()
+                    self._loop = loop
+                    # Created here (on the loop thread) so the first acquire
+                    # binds it to exactly this loop.
+                    self._semaphore = asyncio.Semaphore(self._max_workers)
+                    started.set()
+                    try:
+                        loop.run_forever()
+                    finally:
+                        loop.close()
+
+                self._loop_thread = threading.Thread(
+                    target=_run_loop, name="jevner-event-loop", daemon=True
+                )
+                self._loop_thread.start()
+                if not started.wait(10.0):
+                    raise RuntimeError("JevNER private event loop failed to start.")
+        assert self._loop is not None and not self._loop.is_closed()
+        return self._loop
+
+    def _submit(self, coro: Coroutine[Any, Any, T]) -> T:
+        """Run a coroutine on the private loop; block the caller for the result.
+
+        Safe from any thread; concurrent submissions interleave as
+        coroutines on the loop under the shared semaphore.
+        """
+        loop = self._ensure_loop()
+        return asyncio.run_coroutine_threadsafe(coro, loop).result()
+
+    async def _system_one(
+        self,
+        *,
+        state: str,
+        questions: Mapping[str, Noul | Choice],
+        extra_headers: Mapping[str, str] | None = None,
+    ) -> SystemOneResponse:
+        """One gateway request under the shared in-flight semaphore.
+
+        The semaphore (max_workers) is the single rate limiter for every
+        request this instance issues, mirroring the global bound the old
+        thread pool provided.
+        """
+        assert self._semaphore is not None, "private loop must exist before any request"
+        async with self._semaphore:
+            return await self._client.system_one(
+                state=state, questions=questions, extra_headers=extra_headers
+            )
+
+    # ------------------------------------------------------------------
+    # Detection
+    # ------------------------------------------------------------------
+
+    async def _detect_batch(
+        self,
+        state: str,
+        tokens: list[tuple[int, int, str]],
+        pairs: list[tuple[int, tuple[int, int, str]]],
+    ) -> dict[int, float]:
+        """Ask one detection batch (one Noul per token); returns index -> score.
+
+        Each token question carries its neighbors: whether an isolated
+        single character belongs to an entity is context-dependent (a
+        lone surname is undecidable; with neighbors it is), giving
+        detection region vision. Failures propagate to the caller — a
+        failed detection batch leaves regions unknowable, so the whole
+        call aborts rather than returning silently partial entities.
+
+        Args:
+            state: The rendered detection state (window text).
+            tokens: All window tokens (neighbor lookup).
+            pairs: (index, token) pairs for this batch.
+
+        Returns:
+            Token index -> Noul score for the answered questions.
+        """
+        questions: dict[str, Noul] = {
+            f"tok_{i}": Noul(
+                instructions={
+                    "TOKEN": tok[2].strip(),
+                    "POSITION": i,
+                    "LEFT": tokens[i - 1][2].strip() if i > 0 else "",
+                    "RIGHT": tokens[i + 1][2].strip() if i + 1 < len(tokens) else "",
+                }
+            )
+            for i, tok in pairs
+        }
+        response = await self._system_one(
+            state=state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
+        )
+        batch: dict[int, float] = {}
+        for i, _tok in pairs:
+            answer = response.nouls.get(f"tok_{i}")
+            if answer is None:
+                logger.warning("JevNER got no detection answer for tok_%d, skipped.", i)
+                continue
+            batch[i] = float(answer.noul)
+        return batch
+
+    async def _detect_regions(
         self, window_text: str, tokens: list[tuple[int, int, str]]
     ) -> tuple[list[tuple[int, int, str]], list[int], list[list[tuple[int, int, str]]]]:
         """Detect entity token regions within one window.
@@ -351,6 +512,14 @@ class JevNER:
         token-level prediction of the BertNER base model and treats
         every tokenization shape alike. Results are cached in-process
         by window-text hash; repeated windows cost zero requests.
+
+        Concurrency: every batch of the first pass is independent, so
+        all fly at once (the former sequential loop cost one round
+        trip per 64 tokens — ~188 serialized requests on a full 12k
+        window). The recheck rounds resample the same gray-zone token
+        set, so they also fly concurrently; taking the max over the
+        concurrent samples is exactly the old sequential-rounds result
+        (only tokens that would have passed early are re-asked).
 
         Args:
             window_text: The window text (an exact source substring;
@@ -371,74 +540,42 @@ class JevNER:
                 cached,
             )
         state = render_detection_state(window_text)
-        # Per-token Noul scores; gray-zone tokens (DETECT_RECHECK_LOW..HIGH)
-        # get a second recheck round; passing the threshold in either round counts
-        # (the live API has per-request sampling variance; the same state is
-        # stable across rounds, and rechecks cut token misses sharply).
-        scores: dict[int, float] = {}
-        recheck: list[int] = []
+        # First pass: all batches independent -> all in flight at once.
         indexed: list[tuple[int, tuple[int, int, str]]] = list(enumerate(tokens))
+        first_pass: list[list[tuple[int, tuple[int, int, str]]]] = []
         for raw_batch in batched(indexed, DETECT_BATCH_SIZE):
             pairs = [p for p in raw_batch if p is not None]
-            if not pairs:
-                continue
-            # Each token question carries its neighbors: whether an isolated single
-            # character belongs to an entity is context-dependent (a lone surname is
-            # undecidable; with neighbors it is), giving detection region vision.
-            questions: dict[str, Noul] = {
-                f"tok_{i}": Noul(
-                    instructions={
-                        "TOKEN": tok[2].strip(),
-                        "POSITION": i,
-                        "LEFT": tokens[i - 1][2].strip() if i > 0 else "",
-                        "RIGHT": tokens[i + 1][2].strip() if i + 1 < len(tokens) else "",
-                    }
-                )
-                for i, tok in pairs
-            }
-            response = self._client.system_one(
-                state=state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
+            if pairs:
+                first_pass.append(pairs)
+        scores: dict[int, float] = {}
+        first_results: list[dict[int, float]] = list(
+            await asyncio.gather(
+                *(self._detect_batch(state, tokens, pairs) for pairs in first_pass)
             )
-            for i, _tok in pairs:
-                answer = response.nouls.get(f"tok_{i}")
-                if answer is None:
-                    logger.warning("JevNER got no detection answer for tok_%d, skipped.", i)
-                    continue
-                scores[i] = float(answer.noul)
-                if DETECT_RECHECK_LOW <= scores[i] < DETECT_PROB_THRESHOLD:
-                    recheck.append(i)
-        # Gray-zone multiround recheck (DETECT_RECHECK_ROUNDS independent samples, keep max)
-        for _ in range(DETECT_RECHECK_ROUNDS):
-            pending = [
-                i
-                for i, score in scores.items()
-                if DETECT_RECHECK_LOW <= score < DETECT_PROB_THRESHOLD
-            ]
-            if not pending:
-                break
-            for raw_batch in batched(pending, DETECT_BATCH_SIZE):
-                indices = [i for i in raw_batch if i is not None]
-                if not indices:
-                    continue
-                questions = {
-                    f"tok_{i}": Noul(
-                        instructions={
-                            "TOKEN": tokens[i][2].strip(),
-                            "POSITION": i,
-                            "LEFT": tokens[i - 1][2].strip() if i > 0 else "",
-                            "RIGHT": tokens[i + 1][2].strip() if i + 1 < len(tokens) else "",
-                        }
-                    )
-                    for i in indices
-                }
-                response = self._client.system_one(
-                    state=state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
-                )
-                for i in indices:
-                    answer = response.nouls.get(f"tok_{i}")
-                    if answer is None:
+        )
+        for batch_scores in first_results:
+            scores.update(batch_scores)
+        # Gray-zone recheck (DETECT_RECHECK_ROUNDS independent resamples of the
+        # same token set, keep max): the live API has per-request sampling
+        # variance, and the same state is stable across rounds. Rounds need no
+        # ordering — every (round x batch) task flies concurrently.
+        gray = [
+            i for i, score in scores.items() if DETECT_RECHECK_LOW <= score < DETECT_PROB_THRESHOLD
+        ]
+        if gray:
+            recheck_tasks: list[Coroutine[Any, Any, dict[int, float]]] = []
+            for _ in range(DETECT_RECHECK_ROUNDS):
+                for raw_batch in batched(gray, DETECT_BATCH_SIZE):
+                    indices = [i for i in raw_batch if i is not None]
+                    if not indices:
                         continue
-                    scores[i] = max(scores[i], float(answer.noul))
+                    recheck_tasks.append(
+                        self._detect_batch(state, tokens, [(i, tokens[i]) for i in indices])
+                    )
+            recheck_results: list[dict[int, float]] = list(await asyncio.gather(*recheck_tasks))
+            for resample in recheck_results:
+                for i, score in resample.items():
+                    scores[i] = max(scores[i], score)
         hits = sorted(i for i, score in scores.items() if score >= DETECT_PROB_THRESHOLD)
         # Reassemble hits into strictly contiguous regions (strategy 1 of 2).
         # Strict contiguity keeps adjacent entities from gluing together:
@@ -482,6 +619,8 @@ class JevNER:
         Args:
             tokens: All window tokens.
             hits: Hit token indices (ascending).
+            regions: Strict regions (unused; kept for signature
+                symmetry with the former call site).
 
         Returns:
             Bridged regions; unioned with the strict regions.
@@ -506,7 +645,11 @@ class JevNER:
             bridged.append(current)
         return bridged
 
-    def _type_window(
+    # ------------------------------------------------------------------
+    # Typing
+    # ------------------------------------------------------------------
+
+    async def _type_window(
         self,
         window_text: str,
         tokens: list[tuple[int, int, str]],
@@ -519,6 +662,7 @@ class JevNER:
         contiguity + gap bridging); every contiguous sub-span within
         each region (at most MAX_ENTITY_TOKENS tokens long, nesting
         included) becomes one Choice question batched for typing.
+        Typing batches fly concurrently under the shared semaphore.
 
         Typing supports multiple types: Choice probabilities are a
         competitive distribution; the selected option must clear
@@ -537,7 +681,7 @@ class JevNER:
             Entities recognized in this window (not yet merged across
             windows), offsets anchored to the source.
         """
-        _, hits, strict_regions = self._detect_regions(window_text, tokens)
+        _, hits, strict_regions = await self._detect_regions(window_text, tokens)
         all_regions: list[list[tuple[int, int, str]]] = list(strict_regions)
         for region in self._bridge_regions(tokens, hits, strict_regions):
             if region not in all_regions:
@@ -586,7 +730,7 @@ class JevNER:
         criteria: dict[str, str | None] = {t.label: None for t in entity_types}
         criteria[NONE_LABEL] = None
 
-        def _type_batch(
+        async def _type_batch(
             pairs: list[tuple[int, str]],
         ) -> dict[int, tuple[tuple[EntityType, float], ...]]:
             """One typing batch request: map span index -> ranked type tuple;
@@ -595,7 +739,7 @@ class JevNER:
                 f"type_{i}": Choice(instructions={"SPAN": cand}, criteria=criteria)
                 for i, cand in pairs
             }
-            response = self._client.system_one(
+            response = await self._system_one(
                 state=state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
             )
             batch: dict[int, tuple[tuple[EntityType, float], ...]] = {}
@@ -633,11 +777,11 @@ class JevNER:
                 batch[i] = tuple(sorted(best_per_type.items(), key=lambda kv: -kv[1]))
             return batch
 
-        # Typing batches run in parallel; batch size narrows by option budget:
-        # options per question = types + 1 (NONE), questions per batch <=
-        # REQUEST_MAX_OPTIONS / options per question, capped by TYPING_BATCH_SIZE
-        # (the gateway caps total options per request at 512; 422 beyond).
-        # batched() pads the last batch with None; filter them out.
+        # Typing batches run concurrently under the semaphore; batch size narrows
+        # by option budget: options per question = types + 1 (NONE), questions per
+        # batch <= REQUEST_MAX_OPTIONS / options per question, capped by
+        # TYPING_BATCH_SIZE (the gateway caps total options per request at 512; 422
+        # beyond). batched() pads the last batch with None; filter them out.
         options_per_question = len(entity_types) + 1
         batch_limit = min(TYPING_BATCH_SIZE, REQUEST_MAX_OPTIONS // options_per_question)
         batches = [
@@ -646,21 +790,24 @@ class JevNER:
         ]
         batches = [batch for batch in batches if batch]
         if len(batches) <= 1 or self._max_workers <= 1:
-            batch_results = [_type_batch(pairs) for pairs in batches]
+            batch_results = [await _type_batch(pairs) for pairs in batches]
         else:
-            # ThreadPool.map unpacks Iterable params with *param, so wrap each
-            # batch in a 1-tuple to hand _type_batch the full list
-            batch_results = []
-            for result in self._pool.map(_type_batch, [(list(b),) for b in batches]):
-                if result.error is not None:
+            # Per-batch resilience (thread-pool-era semantics): a failed batch
+            # logs its traceback and yields {} (spans fall back to NONE).
+            async def _guarded_batch(
+                pairs: list[tuple[int, str]],
+            ) -> dict[int, tuple[tuple[EntityType, float], ...]]:
+                try:
+                    return await _type_batch(pairs)
+                except Exception as exc:
                     logger.warning(
-                        "JevNER typing batch failed: %s\n%s", result.error, result.traceback
+                        "JevNER typing batch failed: %s\n%s", exc, traceback.format_exc()
                     )
-                    batch_results.append({})
-                else:
-                    batch_results.append(
-                        cast("dict[int, tuple[tuple[EntityType, float], ...]]", result.returns)
-                    )
+                    return {}
+
+            batch_results = list(
+                await asyncio.gather(*(_guarded_batch(pairs) for pairs in batches))
+            )
         for pairs, result in zip(batches, batch_results, strict=True):
             for i, text in pairs:
                 self._typing_cache.write((window_hash, text, prob_threshold), result.get(i, ()))
@@ -720,7 +867,11 @@ class JevNER:
             merged.append(Entity(text=text, types=ranked, start=start, end=end))
         return merged
 
-    def _recognize_genders(self, names: list[str]) -> dict[str, tuple[Gender, float]]:
+    # ------------------------------------------------------------------
+    # Gender
+    # ------------------------------------------------------------------
+
+    async def _recognize_genders(self, names: list[str]) -> dict[str, tuple[Gender, float]]:
         """Batch-judge name gender (with the in-process cache).
 
         Args:
@@ -740,7 +891,7 @@ class JevNER:
         if not pending:
             return results
         state = render_gender_state()
-        for raw_batch in batched(pending, DETECT_BATCH_SIZE):
+        for raw_batch in batched(pending, GENDER_BATCH_SIZE):
             batch = [n for n in raw_batch if n is not None]
             if not batch:
                 continue
@@ -748,7 +899,7 @@ class JevNER:
                 f"gender_{i}": Choice(instructions={"NAME": name}, criteria=GENDER_CRITERIA)
                 for i, name in enumerate(batch)
             }
-            response = self._client.system_one(state=state, questions=questions)
+            response = await self._system_one(state=state, questions=questions)
             for i, name in enumerate(batch):
                 answer = response.choices.get(f"gender_{i}")
                 if answer is None:
@@ -764,6 +915,104 @@ class JevNER:
                 self._gender_cache.write(name, pair)
                 results[name] = pair
         return results
+
+    # ------------------------------------------------------------------
+    # Recognition entry points
+    # ------------------------------------------------------------------
+
+    async def _arecognize(
+        self,
+        s: str,
+        *,
+        with_gender: bool,
+        entity_packs: Iterable[EntityPack | str] | None,
+        entity_types: Iterable[EntityType] | None,
+        prob_threshold: float,
+        fast_mode: bool,
+        window_size: int | None,
+        stride: int | None,
+        deduplicate: bool,
+    ) -> list[EntityNode]:
+        """Async recognition core (the whole pipeline); parameter meanings
+        and exceptions are documented on __call__."""
+        if not isinstance(s, str) or not s.strip():
+            return []
+        assert 0.0 <= prob_threshold <= 1.0, (
+            f"prob_threshold ({prob_threshold}) must be within [0, 1]."
+        )
+        # Type resolution: packs + explicit types (taxonomy is the sole source;
+        # PERSON and other fixed semantic labels live in the taxonomy)
+        types = self._taxonomy.resolve(entity_packs, entity_types)
+        ws = window_size if window_size is not None else self._window_size
+        st = stride if stride is not None else max(1, ws // DEFAULT_STRIDE_DIVISOR)
+        if ws < 1 or st < 1:
+            raise ValueError(f"window_size ({ws}) and stride ({st}) must be positive.")
+        # Windows are cut on source token offsets; window text is sliced from the
+        # source character range (space-prefixed tokens overlap; re-joining would
+        # duplicate chars), so token offsets stay source-anchored — spans and
+        # entities carry source-global offsets, nesting derives from containment
+        if fast_mode:
+            windows = [(s, self._tokenizer.window_tokens(s))]
+        else:
+            windows = self._tokenizer.windows(s, ws, st)
+        # Request-body guard: window text dominates the body; over budget fails fast
+        # (an oversized request returns an opaque 500 rather than an actionable
+        # error, so this raises with actionable guidance)
+        for window_text, _toks in windows:
+            if len(window_text.encode("utf-8")) > REQUEST_STATE_BUDGET:
+                raise ValueError(
+                    "A sliding window's UTF-8 size exceeds the request body budget "
+                    f"({REQUEST_STATE_BUDGET} bytes of {REQUEST_MAX_BYTES} allowed). "
+                    f"Use a smaller window_size (current {ws} tokens)."
+                )
+        # Window-level concurrency: each window runs detection + typing
+        # independently as a coroutine (batches already concurrent under the
+        # shared semaphore). Sequential (or single-window) runs preserve the
+        # thread-pool-era error semantics: failures propagate; the concurrent
+        # path logs and skips failed windows as empty results.
+        if len(windows) <= 1 or self._max_workers <= 1:
+            window_entities = [
+                await self._type_window(window_text, toks, types, prob_threshold)
+                for window_text, toks in windows
+            ]
+        else:
+
+            async def _guarded_window(
+                window_text: str, toks: list[tuple[int, int, str]]
+            ) -> list[Entity]:
+                try:
+                    return await self._type_window(window_text, toks, types, prob_threshold)
+                except Exception as exc:
+                    logger.warning("JevNER window failed: %s\n%s", exc, traceback.format_exc())
+                    return []
+
+            window_entities = list(
+                await asyncio.gather(*(_guarded_window(wt, toks) for wt, toks in windows))
+            )
+        entities: list[Entity] = [e for ents in window_entities for e in ents]
+        merged = self._combine(entities, deduplicate)
+        if with_gender:
+            # Upgrade PERSON entities to Person (with gender), then build the tree;
+            # the PERSON label always exists in a taxonomy (fixed semantic anchor)
+            names = [e.text for e in merged if e.type.label == PERSON_LABEL]
+            genders = await self._recognize_genders(names)
+            merged = [
+                (
+                    Person(
+                        text=e.text,
+                        types=e.types,
+                        start=e.start,
+                        end=e.end,
+                        gender=genders[e.text][0],
+                        gender_probability=genders[e.text][1],
+                    )
+                    if e.type.label == PERSON_LABEL and e.text in genders
+                    else e
+                )
+                for e in merged
+            ]
+        # Rebuild the nesting tree by offset containment: the return value carries the structure
+        return entity_tree(merged)
 
     def __call__(
         self,
@@ -785,6 +1034,10 @@ class JevNER:
         region sub-span Choice typing (NONE veto + multi-type
         collection) -> per-occurrence merge -> PERSON upgrade -> tree
         building by offset containment.
+
+        Blocks until the whole pipeline finishes (requests interleave
+        with other calls on the instance's private event loop). Async
+        callers should use arecognize instead.
 
         Args:
             s: The text to process, in any language.
@@ -821,82 +1074,130 @@ class JevNER:
             TypeSafeAPIError: The API returned an error response.
             TypeSafeAPIConnectionError: Network failure.
         """
-        if not isinstance(s, str) or not s.strip():
-            return []
-        assert 0.0 <= prob_threshold <= 1.0, (
-            f"prob_threshold ({prob_threshold}) must be within [0, 1]."
+        return self._submit(
+            self._arecognize(
+                s,
+                with_gender=with_gender,
+                entity_packs=entity_packs,
+                entity_types=entity_types,
+                prob_threshold=prob_threshold,
+                fast_mode=fast_mode,
+                window_size=window_size,
+                stride=stride,
+                deduplicate=deduplicate,
+            )
         )
-        # Type resolution: packs + explicit types (taxonomy is the sole source;
-        # PERSON and other fixed semantic labels live in the taxonomy)
-        types = self._taxonomy.resolve(entity_packs, entity_types)
-        ws = window_size if window_size is not None else self._window_size
-        st = stride if stride is not None else max(1, ws // DEFAULT_STRIDE_DIVISOR)
-        if ws < 1 or st < 1:
-            raise ValueError(f"window_size ({ws}) and stride ({st}) must be positive.")
-        # Windows are cut on source token offsets; window text is sliced from the
-        # source character range (space-prefixed tokens overlap; re-joining would
-        # duplicate chars), so token offsets stay source-anchored — spans and
-        # entities carry source-global offsets, nesting derives from containment
-        if fast_mode:
-            windows = [(s, self._tokenizer.window_tokens(s))]
-        else:
-            windows = self._tokenizer.windows(s, ws, st)
-        # Request-body guard: window text dominates the body; over budget fails fast
-        # (an oversized request returns an opaque 500 rather than an actionable
-        # error, so this raises with actionable guidance)
-        for window_text, _toks in windows:
-            if len(window_text.encode("utf-8")) > REQUEST_STATE_BUDGET:
-                raise ValueError(
-                    "A sliding window's UTF-8 size exceeds the request body budget "
-                    f"({REQUEST_STATE_BUDGET} bytes of {REQUEST_MAX_BYTES} allowed). "
-                    f"Use a smaller window_size (current {ws} tokens)."
-                )
-        # Window-level parallelism: each window runs detection + typing
-        # independently (batches already parallel); sequential config or single window runs in order
-        if len(windows) <= 1 or self._max_workers <= 1:
-            window_entities = [
-                self._type_window(window_text, toks, types, prob_threshold)
-                for window_text, toks in windows
-            ]
-        else:
-            window_entities = []
-            jobs_args = [
-                (window_text, toks, types, prob_threshold) for window_text, toks in windows
-            ]
-            for result in self._pool.map(self._type_window, [(a,) for a in jobs_args]):
-                if result.error is not None:
-                    logger.warning("JevNER window failed: %s\n%s", result.error, result.traceback)
-                    window_entities.append([])
-                else:
-                    window_entities.append(cast("list[Entity]", result.returns))
-        entities: list[Entity] = [e for ents in window_entities for e in ents]
-        merged = self._combine(entities, deduplicate)
-        if with_gender:
-            # Upgrade PERSON entities to Person (with gender), then build the tree;
-            # the PERSON label always exists in a taxonomy (fixed semantic anchor)
-            names = [e.text for e in merged if e.type.label == PERSON_LABEL]
-            genders = self._recognize_genders(names)
-            merged = [
-                (
-                    Person(
-                        text=e.text,
-                        types=e.types,
-                        start=e.start,
-                        end=e.end,
-                        gender=genders[e.text][0],
-                        gender_probability=genders[e.text][1],
-                    )
-                    if e.type.label == PERSON_LABEL and e.text in genders
-                    else e
-                )
-                for e in merged
-            ]
-        # Rebuild the nesting tree by offset containment: the return value carries the structure
-        return entity_tree(merged)
+
+    async def arecognize(
+        self,
+        s: str,
+        *,
+        with_gender: bool = True,
+        entity_packs: Iterable[EntityPack | str] | None = None,
+        entity_types: Iterable[EntityType] | None = None,
+        prob_threshold: float = DEFAULT_PROB_THRESHOLD,
+        fast_mode: bool = False,
+        window_size: int | None = None,
+        stride: int | None = None,
+        deduplicate: bool = True,
+    ) -> list[EntityNode]:
+        """Async twin of __call__: the same pipeline, awaitable.
+
+        The work still runs on this instance's private event loop
+        (submitted and awaited via wrap_future), so the HTTP client
+        never crosses event loops — safe to call from any caller
+        loop. Parameters, return value, and exceptions are identical
+        to __call__.
+        """
+        loop = self._ensure_loop()
+        future = asyncio.run_coroutine_threadsafe(
+            self._arecognize(
+                s,
+                with_gender=with_gender,
+                entity_packs=entity_packs,
+                entity_types=entity_types,
+                prob_threshold=prob_threshold,
+                fast_mode=fast_mode,
+                window_size=window_size,
+                stride=stride,
+                deduplicate=deduplicate,
+            ),
+            loop,
+        )
+        return await asyncio.wrap_future(future)
+
+    # ------------------------------------------------------------------
+    # Teardown
+    # ------------------------------------------------------------------
+
+    async def _aclose_client(self) -> None:
+        """Close the async HTTP client on its own loop."""
+        await self._client.aclose()
 
     def close(self) -> None:
-        """Release the underlying HTTP client."""
-        self._client.close()
+        """Release the HTTP client and stop the private event-loop thread.
+
+        Idempotent, safe from sync and async contexts alike. Async code
+        may prefer await aclose() (which also skips the loop-thread join).
+
+        The instance must not be used afterwards (the underlying client
+        is closed); create a new JevNER instead.
+        """
+        with self._loop_lock:
+            loop = self._loop
+            thread = self._loop_thread
+            self._loop = None
+            self._loop_thread = None
+            self._semaphore = None
+        if loop is not None and not loop.is_closed():
+            # Close the client on its own loop (blocking until drained — the
+            # submission queues legally even mid-startup), then stop the loop
+            # and join its thread.
+            asyncio.run_coroutine_threadsafe(self._aclose_client(), loop).result()
+            loop.call_soon_threadsafe(loop.stop)
+            if thread is not None:
+                thread.join(timeout=5.0)
+        elif self._loop_running_in_this_thread():
+            # Loop never started (or already closed), and THIS thread runs an
+            # event loop (async caller using the sync close): asyncio.run
+            # forbids nesting, and fire-and-forget scheduling on the caller's
+            # loop could be dropped if that loop exits immediately — so close
+            # the unused client on a throwaway thread's own loop.
+            closer = threading.Thread(
+                target=lambda: asyncio.run(self._aclose_client()), daemon=True
+            )
+            closer.start()
+            closer.join(timeout=5.0)
+        else:
+            # Sync caller, loop never started (or already closed): close the
+            # client on a throwaway loop — an unused or already-closed httpx
+            # client holds no loop-bound state.
+            asyncio.run(self._aclose_client())
+
+    @staticmethod
+    def _loop_running_in_this_thread() -> bool:
+        """True when an event loop is running in the calling thread."""
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return False
+        return True
+
+    async def aclose(self) -> None:
+        """Async close: release the client and stop the loop without
+        blocking the caller's event loop on the loop-thread join."""
+        with self._loop_lock:
+            loop = self._loop
+            self._loop = None
+            self._loop_thread = None
+            self._semaphore = None
+        if loop is not None and not loop.is_closed():
+            await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(self._aclose_client(), loop))
+            loop.call_soon_threadsafe(loop.stop)
+        else:
+            # No private loop ever ran (or it already closed): close directly
+            # on the caller's loop — the client is unused or already closed.
+            await self._client.aclose()
 
     def __enter__(self) -> Self:
         """Enter the context manager."""
@@ -910,3 +1211,16 @@ class JevNER:
     ) -> None:
         """Exit the context manager and release resources."""
         self.close()
+
+    async def __aenter__(self) -> Self:
+        """Enter the async context manager."""
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object | None,
+    ) -> None:
+        """Exit the async context manager and release resources."""
+        await self.aclose()
