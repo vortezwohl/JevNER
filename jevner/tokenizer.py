@@ -191,7 +191,7 @@ class BundledTokenizer:
 
     def windows(
         self, s: str, window_size: int, stride: int
-    ) -> list[tuple[str, list[tuple[int, int, str]]]]:
+    ) -> list[tuple[str, list[tuple[int, int, str]], int]]:
         """Split long text into sliding windows over the token sequence.
 
         Unlike window_texts, windows are cut directly from the source
@@ -219,19 +219,22 @@ class BundledTokenizer:
                 retain overlap.
 
         Returns:
-            (window text, window tokens) pairs; tokens carry source
-            offsets (start, end, text).
+            (window text, window tokens, base index) triples; tokens
+            carry source offsets (start, end, text); base is the
+            window's first token's index in the full-source token
+            sequence (detection batches align on it so overlapping
+            windows share neighborhoods and cache).
         """
         enc = self.encode(s)
         offsets = enc.offsets
         if len(offsets) <= window_size:
-            return [(s, [(start, end, s[start:end]) for start, end in offsets])]
-        result: list[tuple[str, list[tuple[int, int, str]]]] = []
+            return [(s, [(start, end, s[start:end]) for start, end in offsets], 0)]
+        result: list[tuple[str, list[tuple[int, int, str]], int]] = []
         for base in range(0, len(offsets), stride):
             chunk = offsets[base : base + window_size]
             if not chunk:
                 break
             c_start, c_end = chunk[0][0], chunk[-1][1]
             window_text = s[c_start:c_end]
-            result.append((window_text, [(start, end, s[start:end]) for start, end in chunk]))
+            result.append((window_text, [(start, end, s[start:end]) for start, end in chunk], base))
         return result

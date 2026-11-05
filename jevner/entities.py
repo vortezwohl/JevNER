@@ -32,27 +32,51 @@ import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, Self, TypeGuard
+
+
+def _nonempty_strs(seq: object) -> TypeGuard[list[str]]:
+    """True when seq is a list of non-empty (non-blank) strings."""
+    return isinstance(seq, list) and all(isinstance(item, str) and item.strip() for item in seq)
 
 
 @dataclass(frozen=True)
 class EntityType:
-    """A named entity type: one label and one semantic description.
+    """A named entity type: a label, a semantic description, and
+    optional boundary guides.
 
     Open definition: no closed enum is involved — any label +
     description pair is a valid entity type. The label is the Choice
     criteria tag sent to the model (uppercase English recommended);
     the description rides in the request state's type table and
     directly affects judgment precision, so write it for the model.
+    Examples and counter-examples render into the same table as
+    positive ("e.g.") and negative ("not") boundary guides — one
+    well-chosen counter-example often fixes a systematically confused
+    boundary (external zero-shot NER benchmarks have measured a single
+    boundary sentence moving a dataset F1 from 0.778 to 0.945).
 
     Attributes:
         label: The type label (e.g. "PERSON", "BRAND").
         description: The semantic description (the type-table entry
             sent to the model).
+        examples: Positive examples (at most three are rendered).
+        counter_examples: Negative boundary guides — things this type
+            must NOT match (at most three are rendered).
+        min_chars: Minimum entity length in characters; shorter
+            predictions are dropped (guards single-character noise in
+            unspaced scripts; use 2 for person/place types in Chinese).
+        include_brackets: Whether enclosing book-title brackets
+            (《》〈〉) belong to entities of this type — WORK_OF_ART
+            style labeling conventions.
     """
 
     label: str
     description: str
+    examples: tuple[str, ...] = ()
+    counter_examples: tuple[str, ...] = ()
+    min_chars: int = 1
+    include_brackets: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,46 +102,193 @@ class Gender(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
-BUILTIN_ENTITY_TYPES: dict[str, EntityType] = {
-    label: EntityType(label, description)
-    for label, description in {
-        # --- General (18 OntoNotes 5.0 types + MISC fallback) ---
-        "PERSON": "A real or fictional person's name.",
-        "NORP": "A nationality, religious group, or political group.",
-        "FAC": "A built facility: airport, highway, bridge, stadium, and the like.",
-        "ORG": "An organization: company, government body, school, hospital, and the like.",
-        "GPE": "A geo-political entity: a country, city, state, or other administrative region.",
-        "LOC": "A non-administrative location: mountain, river, sea, continent, and the like.",
-        "PRODUCT": "A physical product: vehicle, weapon, food, device, and the like.",
-        "EVENT": "A named event: war, earthquake, conference, sports tournament, and the like.",
-        "WORK_OF_ART": "A title of a work: book, film, song, game, and the like.",
-        "LAW": "The name of a law or legal document.",
-        "LANGUAGE": "The name of a natural language (e.g. Mandarin, English).",
-        "DATE": "A date or date range, absolute (e.g. October 2023) or relative (e.g. yesterday).",
-        "TIME": "A time of day smaller than a day (e.g. 9 a.m., 14:30).",
-        "PERCENT": "A percentage (e.g. 50%, thirty percent).",
-        "MONEY": ("A monetary amount including the currency (e.g. 100 US dollars, five yuan)."),
-        "QUANTITY": (
+_BUILTIN_SPECS: tuple[dict[str, Any], ...] = (
+    # --- General (18 OntoNotes 5.0 types + MISC fallback) ---
+    {
+        "label": "PERSON",
+        "description": "A real or fictional person's name.",
+        "examples": ("陈嘉禾", "Marie Curie"),
+        "counter_examples": ("职业或称谓如「总经理」", "代词如「他」"),
+        "min_chars": 2,
+    },
+    {
+        "label": "NORP",
+        "description": "A nationality, religious group, or political group.",
+        "examples": ("中国人", "Islam"),
+        "counter_examples": ("具体人名（那是 PERSON）",),
+    },
+    {
+        "label": "FAC",
+        "description": "A built facility: airport, highway, bridge, stadium, and the like.",
+        "examples": ("北京首都机场", "Golden Gate Bridge"),
+    },
+    {
+        "label": "ORG",
+        "description": (
+            "An organization: company, government body, school, hospital, and the like."
+        ),
+        "examples": ("阿里巴巴", "联合国"),
+        "counter_examples": ("设施名称如「首都机场」（那是 FAC）",),
+    },
+    {
+        "label": "GPE",
+        "description": (
+            "A geo-political entity: a country, city, state, or other administrative region."
+        ),
+        "examples": ("江苏南京", "New York"),
+        "counter_examples": ("自然地貌如「长江」（那是 LOC）",),
+    },
+    {
+        "label": "LOC",
+        "description": (
+            "A non-administrative location: mountain, river, sea, continent, and the like."
+        ),
+        "examples": ("长江", "南极洲"),
+        "counter_examples": ("城市或行政区名（那是 GPE）",),
+    },
+    {
+        "label": "PRODUCT",
+        "description": "A physical product: vehicle, weapon, food, device, and the like.",
+        "examples": ("iPhone 15", "波音747"),
+    },
+    {
+        "label": "EVENT",
+        "description": (
+            "A named event: war, earthquake, conference, sports tournament, and the like."
+        ),
+        "examples": ("第二次世界大战", "世界杯"),
+    },
+    {
+        "label": "WORK_OF_ART",
+        "description": "A title of a work: book, film, song, game, and the like.",
+        "examples": ("红楼梦", "流浪地球"),
+        "counter_examples": ("作者名（那是 PERSON）",),
+        "include_brackets": True,
+    },
+    {
+        "label": "LAW",
+        "description": "The name of a law or legal document.",
+        "examples": ("民法典", "宪法第一修正案"),
+    },
+    {
+        "label": "LANGUAGE",
+        "description": "The name of a natural language (e.g. Mandarin, English).",
+        "examples": ("普通话", "Swahili"),
+    },
+    {
+        "label": "DATE",
+        "description": (
+            "A date or date range, absolute (e.g. October 2023) or relative (e.g. yesterday)."
+        ),
+        "examples": ("2023年10月", "昨天"),
+    },
+    {
+        "label": "TIME",
+        "description": "A time of day smaller than a day (e.g. 9 a.m., 14:30).",
+        "examples": ("上午9点", "14:30"),
+    },
+    {
+        "label": "PERCENT",
+        "description": "A percentage (e.g. 50%, thirty percent).",
+        "examples": ("50%", "百分之三十"),
+    },
+    {
+        "label": "MONEY",
+        "description": (
+            "A monetary amount including the currency (e.g. 100 US dollars, five yuan)."
+        ),
+        "examples": ("100美元", "五元"),
+    },
+    {
+        "label": "QUANTITY",
+        "description": (
             "A non-monetary measurement: weight, distance, volume, temperature, and the like."
         ),
-        "ORDINAL": "An ordinal number (e.g. first, 3rd, primary).",
-        "CARDINAL": "A bare quantity number (e.g. forty-seven, 2.5).",
-        "MISC": "A miscellaneous proper name that fits none of the above types.",
-        # --- Biomedical ---
-        "DISEASE": "The name of a disease or syndrome (e.g. diabetes, COVID-19).",
-        "DRUG": "The name of a drug or medication (e.g. aspirin, metformin).",
-        "GENE": "The name of a gene (e.g. BRCA1, TP53).",
-        "PROTEIN": "The name of a protein (e.g. insulin, hemoglobin).",
-        "CHEMICAL": "The name of a chemical substance (e.g. ethanol, glucose).",
-        # --- Finance ---
-        "TICKER": "A security ticker symbol (e.g. AAPL, 600519.SH).",
-        "STOCK_INDEX": "The name of a market index (e.g. the SSE Composite, the S&P 500).",
-        "CURRENCY": "The name of a currency (e.g. US dollar), as distinct from a monetary amount.",
-        # --- Software ---
-        "SOFTWARE": "The name of a software program, library, or framework (e.g. Python, PyTorch).",
-        "PROTOCOL": "The name of a network or communication protocol (e.g. HTTP, Bluetooth).",
-        "PLATFORM": "The name of a platform or online service (e.g. WeChat, AWS, GitHub).",
-    }.items()
+        "examples": ("三公里", "20千克"),
+    },
+    {
+        "label": "ORDINAL",
+        "description": "An ordinal number (e.g. first, 3rd, primary).",
+        "examples": ("第一", "3rd"),
+    },
+    {
+        "label": "CARDINAL",
+        "description": "A bare quantity number (e.g. forty-seven, 2.5).",
+        "examples": ("四十七", "2.5"),
+    },
+    {
+        "label": "MISC",
+        "description": ("A miscellaneous proper name that fits none of the above types."),
+    },
+    # --- Biomedical ---
+    {
+        "label": "DISEASE",
+        "description": "The name of a disease or syndrome (e.g. diabetes, COVID-19).",
+        "examples": ("二型糖尿病", "COVID-19"),
+        "counter_examples": ("症状词如「发烧」（不是疾病名）",),
+    },
+    {
+        "label": "DRUG",
+        "description": "The name of a drug or medication (e.g. aspirin, metformin).",
+        "examples": ("阿司匹林", "metformin"),
+    },
+    {
+        "label": "GENE",
+        "description": "The name of a gene (e.g. BRCA1, TP53).",
+        "examples": ("BRCA1", "TP53"),
+    },
+    {
+        "label": "PROTEIN",
+        "description": "The name of a protein (e.g. insulin, hemoglobin).",
+        "examples": ("胰岛素", "hemoglobin"),
+    },
+    {
+        "label": "CHEMICAL",
+        "description": "The name of a chemical substance (e.g. ethanol, glucose).",
+        "examples": ("乙醇", "glucose"),
+    },
+    # --- Finance ---
+    {
+        "label": "TICKER",
+        "description": "A security ticker symbol (e.g. AAPL, 600519.SH).",
+        "examples": ("AAPL", "600519.SH"),
+    },
+    {
+        "label": "STOCK_INDEX",
+        "description": "The name of a market index (e.g. the SSE Composite, the S&P 500).",
+        "examples": ("标普500", "上证综指"),
+    },
+    {
+        "label": "CURRENCY",
+        "description": (
+            "The name of a currency (e.g. US dollar), as distinct from a monetary amount."
+        ),
+        "examples": ("美元", "人民币"),
+    },
+    # --- Software ---
+    {
+        "label": "SOFTWARE",
+        "description": (
+            "The name of a software program, library, or framework (e.g. Python, PyTorch)."
+        ),
+        "examples": ("Python", "PyTorch"),
+    },
+    {
+        "label": "PROTOCOL",
+        "description": ("The name of a network or communication protocol (e.g. HTTP, Bluetooth)."),
+        "examples": ("HTTP", "蓝牙"),
+    },
+    {
+        "label": "PLATFORM",
+        "description": "The name of a platform or online service (e.g. WeChat, AWS, GitHub).",
+        "examples": ("微信", "GitHub"),
+    },
+)
+"""Type specs for BUILTIN_ENTITY_TYPES below (examples/counter-examples
+render into typing states as boundary guides)."""
+
+BUILTIN_ENTITY_TYPES: dict[str, EntityType] = {
+    spec["label"]: EntityType(**spec) for spec in _BUILTIN_SPECS
 }
 """Built-in entity type registry: 31 types across general + four vertical
 domains, serving as the base for user extensions."""
@@ -214,8 +385,11 @@ class EntityTaxonomy:
               "default_packs": ["CORE", "ECOM"]                  # default packs
             }
 
-        - entity_types: label -> description mapping; a same-label
-          entry overrides the built-in description;
+        - entity_types: label -> description string (compact form), or
+          label -> object {"description": ..., "examples": [...],
+          "counter_examples": [...], "min_chars": n,
+          "include_brackets": bool} (all fields except description
+          optional); a same-label entry overrides the built-in;
         - entity_packs: pack name -> label list (or an object
           {"description": ..., "entity_types": [...]}); referenced
           types must exist in the merged type table;
@@ -252,12 +426,43 @@ class EntityTaxonomy:
         custom_types = config.get("entity_types") or {}
         if not isinstance(custom_types, dict):
             raise ValueError(f'"entity_types" must be a JSON object, got {type(custom_types)!r}.')
-        for label, description in custom_types.items():
+        for label, spec in custom_types.items():
             if not isinstance(label, str) or not label.strip():
                 raise ValueError(f"Entity type label must be a non-empty string, got {label!r}.")
+            if isinstance(spec, str):
+                spec = {"description": spec}
+            if not isinstance(spec, dict):
+                raise ValueError(
+                    f'Entity type "{label}" must be a description string or an object, '
+                    f"got {type(spec)!r}."
+                )
+            description = spec.get("description")
             if not isinstance(description, str) or not description.strip():
                 raise ValueError(f'Entity type "{label}" needs a non-empty description.')
-            entity_types[label] = EntityType(label=label, description=description)
+            examples = spec.get("examples", [])
+            if not _nonempty_strs(examples):
+                raise ValueError(
+                    f'Entity type "{label}" examples must be a list of non-empty strings.'
+                )
+            counter_examples = spec.get("counter_examples", [])
+            if not _nonempty_strs(counter_examples):
+                raise ValueError(
+                    f'Entity type "{label}" counter_examples must be a list of non-empty strings.'
+                )
+            min_chars = spec.get("min_chars", 1)
+            if not isinstance(min_chars, int) or isinstance(min_chars, bool) or min_chars < 1:
+                raise ValueError(f'Entity type "{label}" min_chars must be a positive integer.')
+            include_brackets = spec.get("include_brackets", False)
+            if not isinstance(include_brackets, bool):
+                raise ValueError(f'Entity type "{label}" include_brackets must be a boolean.')
+            entity_types[label] = EntityType(
+                label=label,
+                description=description,
+                examples=tuple(examples),
+                counter_examples=tuple(counter_examples),
+                min_chars=min_chars,
+                include_brackets=include_brackets,
+            )
         # Parse entity_packs: name -> label list (or object with description).
         custom_packs = config.get("entity_packs") or {}
         if not isinstance(custom_packs, dict):
@@ -372,6 +577,40 @@ when with_gender is enabled."""
 
 NONE_LABEL = "NONE"
 """The non-entity option label in typing Choice questions."""
+
+NONE_DESCRIPTION = (
+    "None of the entity types: a common word, phrase, or sentence; also a date, "
+    "time, plain number, monetary amount, phone number, email address, web "
+    "address, or a lone job title or honorific when no enabled type covers it."
+)
+"""Option description for the NONE veto in typing Choice questions.
+
+A bare NONE label leaves the model to guess what "not an entity"
+means; an explicit enumeration of common false positives sharpens the
+veto (A1c in docs/optimization-roadmap.md)."""
+
+PARTIAL_LABEL = "PARTIAL"
+"""The truncated-entity veto label in typing Choice questions."""
+
+PARTIAL_DESCRIPTION = (
+    "The span truncates a named entity: it is only a fragment of a longer "
+    "name, missing its beginning or end."
+)
+
+MIXED_LABEL = "MIXED"
+"""The name-plus-glue-words veto label in typing Choice questions."""
+
+MIXED_DESCRIPTION = (
+    "The span sticks to a named entity: it contains a name plus attached "
+    "verbs, prepositions, particles, titles, or modifiers."
+)
+
+VETO_LABELS: tuple[str, ...] = (NONE_LABEL, PARTIAL_LABEL, MIXED_LABEL)
+"""Typing choices that veto an entity regardless of other probabilities.
+
+PARTIAL and MIXED turn near-miss boundaries (a truncated name, a name
+with glue words) into explicit classes instead of forcing the model
+to choose between NONE and a real type (A2 in the roadmap)."""
 
 
 @dataclass(frozen=True)

@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# bench raw dataset downloads (frozen samples in bench/sets are committed)
+bench/data/
+docs/optimization-roadmap.md

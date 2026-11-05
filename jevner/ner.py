@@ -50,9 +50,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import threading
+import time
 import traceback
 from collections.abc import Coroutine, Iterable, Mapping
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, Self, TypeVar, cast
 
 from typesafe_sdk import (
@@ -60,15 +64,22 @@ from typesafe_sdk import (
     Choice,
     Noul,
     RetryPolicy,
-    SystemOneResponse,
+    TypeSafeAPIError,
 )
 from vortezwohl.cache import LRUCache
 from vortezwohl.iter import batched
 
+from jevner.disk_cache import DiskCache
 from jevner.entities import (
     DEFAULT_TAXONOMY,
+    MIXED_DESCRIPTION,
+    MIXED_LABEL,
+    NONE_DESCRIPTION,
     NONE_LABEL,
+    PARTIAL_DESCRIPTION,
+    PARTIAL_LABEL,
     PERSON_LABEL,
+    VETO_LABELS,
     Entity,
     EntityNode,
     EntityPack,
@@ -78,13 +89,61 @@ from jevner.entities import (
     Person,
     entity_tree,
 )
-from jevner.prompt import render_detection_state, render_gender_state, render_typing_state
+from jevner.prompt import (
+    render_detection_state,
+    render_gender_state,
+    render_nomination_state,
+    render_typing_state,
+)
 from jevner.tokenizer import BundledTokenizer, strip_span
 
 logger = logging.getLogger("jevner")
 
 T = TypeVar("T")
 """Type variable for private-loop submission helpers."""
+
+
+@dataclass
+class Usage:
+    """Cumulative gateway usage for one JevNER instance.
+
+    The counters update on the private event loop as requests complete
+    and cache lookups answer; reading from other threads is safe
+    (individual int/float reads are atomic under the GIL). Retries
+    inside the SDK client are not visible here and are not counted.
+
+    Attributes:
+        requests: system_one calls completed.
+        questions: questions sent across all requests.
+        cache_hits: questions answered from local caches instead of
+            the gateway (a detection window hit counts every skipped
+            token question; typing and gender hits count one per
+            span/name).
+        input_tokens: input tokens reported by the API (0 when the API
+            does not report usage).
+        output_tokens: output tokens reported by the API.
+        seconds: wall time spent inside system_one calls (excluding
+            semaphore queueing).
+    """
+
+    requests: int = 0
+    questions: int = 0
+    cache_hits: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    seconds: float = 0.0
+
+    def as_dict(self) -> dict[str, float | int]:
+        """Return a plain-dict snapshot (for logging and reports)."""
+        return {
+            "requests": self.requests,
+            "questions": self.questions,
+            "cache_hits": self.cache_hits,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "api_seconds": round(self.seconds, 3),
+        }
+
 
 DEFAULT_MODEL = "baseten/mammoth-1"
 """Default model: Mammoth 1 hosted on BaseTen (routed through the same
@@ -250,6 +309,144 @@ DETECT_RECHECK_ROUNDS = 3
 """Recheck rounds for gray-zone tokens (1 first pass + 3 samples,
 take the maximum)."""
 
+DETECT_NEIGHBORHOOD = 128
+"""Tokens of context each side of a detection batch's request state.
+
+Every batch of a window used to re-send the whole window text (up to
+48KB), dominating input-token cost on long documents (~188 batches
+per full window). Detection questions carry their immediate LEFT/
+RIGHT neighbors inline, so a bounded neighborhood is sufficient
+context — and the neighborhood hashes into a window-independent
+cache key, making the 50% window overlap nearly free."""
+
+TYPING_MARGIN = 160
+"""Characters of context margin around typing states and cache keys.
+
+The typing request state is the source slice covering all candidate
+spans plus this margin (short texts degenerate to the whole text);
+per-span cache keys use the same margin around each span so that the
+same span in different windows hashes identically."""
+
+EDGE_SCORE_MIN = 0.40
+"""Detection-score floor for a sub-span's edge tokens (A5b).
+
+Detection already paid for every token's Noul score; an entity's edge
+tokens score high, so a candidate sub-span whose first or last token
+scored below this floor is almost surely a bad boundary. Free
+precision: junk spans never reach a typing question."""
+
+ZH_EDGE_STOP = frozenset(
+    "的了是在与及把被着过吗呢吧啊也都就还这那我你他她它或而但对为从向于等之其该各每某再更很太最让跟同以及已又便则"
+)
+"""Single CJK characters that never open or close an entity name (A5a)."""
+
+EN_EDGE_STOP = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "of",
+        "in",
+        "on",
+        "at",
+        "to",
+        "for",
+        "with",
+        "by",
+        "from",
+        "as",
+        "and",
+        "or",
+        "but",
+        "nor",
+        "is",
+        "was",
+        "were",
+        "are",
+        "be",
+        "been",
+        "being",
+        "has",
+        "have",
+        "had",
+        "that",
+        "which",
+        "who",
+        "whom",
+        "whose",
+        "this",
+        "these",
+        "those",
+        "its",
+        "their",
+        "his",
+        "her",
+        "our",
+        "your",
+        "my",
+        "it",
+        "he",
+        "she",
+        "they",
+        "we",
+        "you",
+        "than",
+        "then",
+        "also",
+        "not",
+        "including",
+        "such",
+        "while",
+        "when",
+        "where",
+    }
+)
+"""Latin words that never open or close an entity name (A5a).
+
+Prepositions are forbidden at either edge (entity-internal
+prepositions like "Bank of America" are untouched — only the EDGE
+unit is checked)."""
+
+TYPING_CLUSTER_CHARS = 2000
+"""Maximum source-character spread of one typing batch (S2).
+
+Typing batches are position-clustered: a batch closes when its spans
+spread wider than this, so each request state stays a local slice
+instead of covering every span of a long document."""
+
+NOMINATION_ROUNDS = 3
+"""Maximum span-competition nomination rounds (each round removes its
+picks and re-asks, surfacing nested entities the previous round's
+single answer overshadowed)."""
+
+NOMINATE_TOP = 5
+"""Options accepted per nomination round (ranked by probability)."""
+
+NOMINATE_MIN = 0.10
+"""Probability floor for a nominated option to be accepted."""
+
+NOMINATE_POOL_MAX = 63
+"""Unique surface-form cap for window-wide nomination pools.
+
+At or below it the window nominates as ONE option pool (maximum
+competition); above it nomination switches per region so distinct
+picks are not capped by the round budget on entity-dense long docs."""
+"""Probability floor for a nominated option to be accepted."""
+
+COMPETE_MIN_SPANS = 8
+"""Minimum candidate count for competition typing; below it flat
+typing every span is cheaper than nominate-then-verify."""
+
+NOMINATE_INSTRUCTIONS: dict[str, str] = {
+    "TASK": "Pick the option that is exactly one complete named entity of a type in ENTITY_TYPES.",
+    "RULES": (
+        "The option must be the complete entity by itself: not a fragment of a "
+        "longer name, and not a name with extra words attached (verbs, "
+        "prepositions, titles, or modifiers). If no option qualifies, choose NONE."
+    ),
+}
+"""Instructions for span-competition nomination questions (A3)."""
+
 MAX_ENTITY_TOKENS = 12
 """Maximum token length of a sub-span inside an entity region.
 
@@ -286,6 +483,180 @@ class _Cache(Protocol):
     def write(self, key: object, value: object) -> object | None: ...
 
 
+def _type_fingerprint(entity_types: tuple[EntityType, ...]) -> str:
+    """Hash the full type specs (labels, descriptions, examples, counters).
+
+    Cache keys for typing answers carry this fingerprint so that a
+    schema change — new examples, a reworded description, different
+    packs — invalidates cached judgments instead of silently reusing
+    answers obtained under the old type table.
+    """
+    blob = repr([(t.label, t.description, t.examples, t.counter_examples) for t in entity_types])
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+_EDGE_TOKEN_RE = re.compile(
+    r"[A-Za-z0-9]+(?:['’\-.&][A-Za-z0-9]+)*"
+    r"|[㐀-䶿一-鿿豈-﫿぀-ヿ가-힯]"
+)
+"""One CJK character or one Latin word/number — the edge unit for span pruning."""
+
+
+def _is_cjk_char(ch: str) -> bool:
+    """True for CJK ideographs, kana, and hangul (entity-text scripts)."""
+    code = ord(ch)
+    return (
+        0x3400 <= code <= 0x4DBF
+        or 0x4E00 <= code <= 0x9FFF
+        or 0xF900 <= code <= 0xFAFF
+        or 0x3040 <= code <= 0x30FF
+        or 0xAC00 <= code <= 0xD7AF
+    )
+
+
+def bad_span_edge(text: str) -> bool:
+    """True when a span opens or closes on a function word (A5a).
+
+    Entity names never begin or end on a stopword in any script:
+    Chinese particles (的了是在...) and Latin function words /
+    prepositions (of, the, in...) at an edge mean the span grabbed
+    glue. Entity-INTERNAL words are untouched — only the edge units
+    are checked, so "Bank of America" and "Ministry of Education"
+    survive.
+
+    Args:
+        text: The candidate span text.
+
+    Returns:
+        True when either edge unit is a stopword (span should be
+        dropped before typing).
+    """
+    units = _EDGE_TOKEN_RE.findall(text)
+    if not units:
+        return False
+    for unit in (units[0], units[-1]):
+        if len(unit) == 1 and _is_cjk_char(unit):
+            if unit in ZH_EDGE_STOP:
+                return True
+        elif unit.lower() in EN_EDGE_STOP:
+            return True
+    return False
+
+
+def _encode_ranked(ranked: tuple[tuple[EntityType, float], ...]) -> list[list[object]]:
+    """Serialize a ranked type tuple to a JSON-safe nested list."""
+    return [
+        [
+            [
+                t.label,
+                t.description,
+                list(t.examples),
+                list(t.counter_examples),
+                t.min_chars,
+                t.include_brackets,
+            ],
+            p,
+        ]
+        for t, p in ranked
+    ]
+
+
+def _decode_ranked(blob: list[list[Any]]) -> tuple[tuple[EntityType, float], ...]:
+    """Rebuild a ranked type tuple from its JSON-safe nested list."""
+    return tuple(
+        (
+            EntityType(s[0], s[1], tuple(s[2]), tuple(s[3]), int(s[4]), bool(s[5])),
+            float(p),
+        )
+        for s, p in blob
+    )
+
+
+def _flatten_fragments(source: str, entities: list[Entity]) -> list[Entity]:
+    """Drop same-type fragments and merge adjacent same-type pairs (A7).
+
+    The standard flat-F1 convention: an entity fully inside another
+    entity of the SAME primary type is a boundary fragment ("Tim"
+    inside "Tim Cook"), and same-type neighbors separated only by
+    non-alphanumerics split one name ("Tim" + "Cook" over a space).
+    The default nested output deliberately keeps both sides; this
+    opt-in mode serves flat gold standards and review flows.
+
+    Args:
+        source: The full source text (gap inspection between spans).
+        entities: Merged entities (nesting still flat at this stage).
+
+    Returns:
+        The flattened entity list, sorted by (start, end).
+    """
+    kept: list[Entity] = []
+    for e in sorted(entities, key=lambda x: (x.start, -x.end)):
+        contained = any(
+            o is not e
+            and o.type == e.type
+            and o.start <= e.start
+            and e.end <= o.end
+            and (o.end - o.start) > (e.end - e.start)
+            for o in entities
+        )
+        if not contained:
+            kept.append(e)
+    merged: list[Entity] = []
+    for e in sorted(kept, key=lambda x: (x.start, x.end)):
+        if merged:
+            prev = merged[-1]
+            gap = source[prev.end : e.start]
+            if prev.type == e.type and prev.end <= e.start and not any(ch.isalnum() for ch in gap):
+                merged[-1] = Entity(
+                    text=source[prev.start : e.end],
+                    types=prev.types,
+                    start=prev.start,
+                    end=e.end,
+                )
+                continue
+        merged.append(e)
+    return merged
+
+
+class _ResponseLike(Protocol):
+    """Anything carrying per-question answers the pipeline reads."""
+
+    @property
+    def nouls(self) -> Mapping[str, Any]: ...
+
+    @property
+    def choices(self) -> Mapping[str, Any]: ...
+
+
+@dataclass
+class _MergedResponse:
+    """A bisected-request recombination: the union of two half answers."""
+
+    nouls: dict[str, Any]
+    choices: dict[str, Any]
+
+
+_OVERSIZE_MARKERS: tuple[str, ...] = (
+    "max_tokens",
+    "too large",
+    "too many",
+    "request entity",
+    "payload",
+    "413",
+    "context_length",
+)
+
+
+def _looks_oversize(message: str) -> bool:
+    """True when an API error message smells like a size-limit rejection.
+
+    Best-effort marker matching: gateway error wording varies by model
+    and revision; anything unrecognized re-raises untouched.
+    """
+    lowered = message.lower()
+    return any(marker in lowered for marker in _OVERSIZE_MARKERS)
+
+
 class JevNER:
     """A sliding-window multilingual entity recognizer over gateway models.
 
@@ -297,6 +668,11 @@ class JevNER:
     event loop (a single daemon thread), bounded by an in-flight
     semaphore of max_workers. The synchronous call operator works from
     any thread; async callers should await arecognize().
+
+    Usage accounting: the `usage` attribute accumulates requests,
+    questions, cache hits, token counts, and API seconds since
+    construction — the basis for cost/latency measurement and A/B
+    comparison of pipeline changes.
     """
 
     def __init__(
@@ -308,6 +684,8 @@ class JevNER:
         timeout: float | None = None,
         window_size: int = DEFAULT_WINDOW_SIZE,
         max_workers: int = DEFAULT_MAX_WORKERS,
+        typing_strategy: str = "compete",
+        disk_cache_path: str | Path | None = None,
         taxonomy: EntityTaxonomy | None = None,
     ) -> None:
         """Initialize the recognizer.
@@ -326,6 +704,15 @@ class JevNER:
             max_workers: In-flight request limit (the semaphore
                 width on the private event loop); 0 or 1 serializes
                 requests.
+            typing_strategy: "compete" (default) first shortlists
+                candidates by span competition (options compete as
+                Choice options; rounds remove picks and re-ask to
+                surface nested entities), then flat-types the
+                shortlist; "flat" types every candidate sub-span
+                independently — lower latency, more questions.
+            disk_cache_path: Optional sqlite file persisting gateway
+                answers across processes (repeat runs cost zero
+                requests); None keeps everything in-process only.
             taxonomy: Entity type system (type/pack registries and
                 default packs); None uses the built-in system. Consumer
                 users can pass EntityTaxonomy.from_json(...) results.
@@ -348,6 +735,9 @@ class JevNER:
         )
         self._tokenizer = BundledTokenizer()
         self._window_size = window_size
+        self._model_name = model_name
+        # Optional persistent answer cache (opt-in; LRU caches sit in front).
+        self._disk: DiskCache | None = DiskCache(disk_cache_path) if disk_cache_path else None
         # Entity type system: type/pack registries + default packs, the single
         # source of type semantics; users extend or override via JSON
         self._taxonomy = taxonomy if taxonomy is not None else DEFAULT_TAXONOMY
@@ -355,6 +745,9 @@ class JevNER:
         # detection batches, recheck batches, typing batches, and gender
         # batches alike — the global rate the old thread pool provided.
         self._max_workers = max(1, max_workers)
+        if typing_strategy not in ("flat", "compete"):
+            raise ValueError(f'typing_strategy ({typing_strategy!r}) must be "flat" or "compete".')
+        self._typing_strategy = typing_strategy
         # Private event loop: started lazily on first use, one daemon thread.
         # All coroutines (and the AsyncTypeSafeClient) live on it; both the
         # sync facade and arecognize submit work there, so the HTTP client
@@ -368,9 +761,16 @@ class JevNER:
         # Repeated text / overlapping windows / repeated names all hit cache.
         # Single-threaded under the event loop: no await between read and
         # write, so plain dict-based LRU access needs no locking.
+        # Per-key single-flight guard: overlapping windows ask identical
+        # detection batches CONCURRENTLY — the first request computes, the
+        # rest await the shared future instead of racing the cache.
+        self._inflight: dict[object, asyncio.Future[dict[int, float]]] = {}
         self._detect_cache: _Cache = LRUCache(capacity=DETECT_CACHE_CAPACITY)
         self._typing_cache: _Cache = LRUCache(capacity=TYPING_CACHE_CAPACITY)
         self._gender_cache: _Cache = LRUCache(capacity=GENDER_CACHE_CAPACITY)
+        # Cumulative usage accounting (requests / questions / cache hits /
+        # tokens / API seconds), updated on the private loop; see Usage.
+        self.usage = Usage()
         logger.debug(
             "JevNER initialized with model: %s, window_size: %d, max_workers: %d.",
             model_name,
@@ -423,6 +823,14 @@ class JevNER:
         assert self._loop is not None and not self._loop.is_closed()
         return self._loop
 
+    def _disk_key(self, key: tuple[Any, ...]) -> tuple[Any, ...]:
+        """Prefix a cache key with the model name for the disk layer.
+
+        Answers from one model are never reused for another; the LRU
+        layer needs no prefix (one instance runs exactly one model).
+        """
+        return ("model", self._model_name, *key)
+
     def _submit(self, coro: Coroutine[Any, Any, T]) -> T:
         """Run a coroutine on the private loop; block the caller for the result.
 
@@ -438,18 +846,61 @@ class JevNER:
         state: str,
         questions: Mapping[str, Noul | Choice],
         extra_headers: Mapping[str, str] | None = None,
-    ) -> SystemOneResponse:
+    ) -> _ResponseLike:
         """One gateway request under the shared in-flight semaphore.
 
         The semaphore (max_workers) is the single rate limiter for every
         request this instance issues, mirroring the global bound the old
         thread pool provided.
+
+        Oversize self-healing (S5c): a size-limit rejection (token or
+        payload cap, best-effort matched) splits the question set in
+        half and both halves retry recursively — a runtime safety net
+        behind the static request budgets, so one unexpectedly large
+        state degrades into more requests instead of a hard failure.
         """
         assert self._semaphore is not None, "private loop must exist before any request"
         async with self._semaphore:
-            return await self._client.system_one(
-                state=state, questions=questions, extra_headers=extra_headers
-            )
+            start = time.perf_counter()
+            try:
+                response = await self._client.system_one(
+                    state=state, questions=questions, extra_headers=extra_headers
+                )
+            except TypeSafeAPIError as exc:
+                # Anything else re-raises; an oversize-looking rejection with
+                # more than one question falls through to the bisect below.
+                if len(questions) < 2 or not _looks_oversize(str(exc)):
+                    raise
+            else:
+                usage = self.usage
+                usage.requests += 1
+                usage.questions += len(questions)
+                usage.seconds += time.perf_counter() - start
+                if response.usage.input_tokens is not None:
+                    usage.input_tokens += response.usage.input_tokens
+                if response.usage.output_tokens is not None:
+                    usage.output_tokens += response.usage.output_tokens
+                return response
+        # Reached only on the oversize path (the semaphore is released —
+        # the recursive halves acquire their own slots).
+        items = list(questions.items())
+        mid = len(items) // 2
+        first = await self._system_one(
+            state=state, questions=dict(items[:mid]), extra_headers=extra_headers
+        )
+        second = await self._system_one(
+            state=state, questions=dict(items[mid:]), extra_headers=extra_headers
+        )
+        logger.warning(
+            "JevNER request exceeded a size limit; bisected %d questions into %d + %d.",
+            len(questions),
+            mid,
+            len(questions) - mid,
+        )
+        return _MergedResponse(
+            nouls={**dict(first.nouls), **dict(second.nouls)},
+            choices={**dict(first.choices), **dict(second.choices)},
+        )
 
     # ------------------------------------------------------------------
     # Detection
@@ -457,7 +908,7 @@ class JevNER:
 
     async def _detect_batch(
         self,
-        state: str,
+        source: str,
         tokens: list[tuple[int, int, str]],
         pairs: list[tuple[int, tuple[int, int, str]]],
     ) -> dict[int, float]:
@@ -470,19 +921,80 @@ class JevNER:
         failed detection batch leaves regions unknowable, so the whole
         call aborts rather than returning silently partial entities.
 
+        The request state is a NEIGHBORHOOD of the batch (tokens
+        [first - DETECT_NEIGHBORHOOD, last + DETECT_NEIGHBORHOOD])
+        rather than the whole window: every batch of a window re-sent
+        the full window text, which dominated input-token cost on long
+        documents (~188 batches x up to 48KB). Token questions carry
+        their immediate LEFT/RIGHT neighbors inline, so a bounded
+        neighborhood is sufficient context for the judgment.
+
+        Answers cache by (neighborhood hash, relative positions) —
+        window-independent, so the 50% window overlap and repeated
+        passages hit cache instead of re-asking.
+
         Args:
-            state: The rendered detection state (window text).
+            source: The full source text (token offsets are global;
+                the neighborhood is sliced from it).
             tokens: All window tokens (neighbor lookup).
             pairs: (index, token) pairs for this batch.
 
         Returns:
             Token index -> Noul score for the answered questions.
         """
+        first, last = pairs[0][0], pairs[-1][0]
+        lo = max(0, first - DETECT_NEIGHBORHOOD)
+        hi = min(len(tokens), last + 1 + DETECT_NEIGHBORHOOD)
+        nb_text = source[tokens[lo][0] : tokens[hi - 1][1]]
+        nb_hash = hashlib.sha256(nb_text.encode("utf-8")).hexdigest()
+        rel_positions = tuple(i - lo for i, _tok in pairs)
+        cache_key = ("nb", nb_hash, rel_positions)
+        cached = self._detect_cache.read(cache_key)
+        if cached is None and self._disk is not None:
+            blob = self._disk.read(self._disk_key(cache_key))
+            if blob is not None:
+                cached = {int(k): float(v) for k, v in blob.items()}
+                self._detect_cache.write(cache_key, cached)
+        if cached is not None:
+            self.usage.cache_hits += len(pairs)
+            cached_rel = cast("dict[int, float]", cached)
+            return {i: cached_rel[i - lo] for i, _tok in pairs}
+        # Single-flight: an in-flight identical batch (overlapping window)
+        # shares its computation instead of issuing a duplicate request.
+        existing = self._inflight.get(cache_key)
+        if existing is not None:
+            # REL-keyed shared result: both windows map through their own lo.
+            shared = await asyncio.shield(existing)
+            self.usage.cache_hits += len(pairs)
+            return {i: shared[i - lo] for i, _tok in pairs if (i - lo) in shared}
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[int, float]] = loop.create_future()
+        self._inflight[cache_key] = future
+        try:
+            rel_result = await self._detect_batch_ask(nb_text, tokens, pairs, lo, cache_key)
+        except BaseException as exc:
+            future.set_exception(exc)
+            del self._inflight[cache_key]
+            raise
+        future.set_result(rel_result)
+        del self._inflight[cache_key]
+        return {i: rel_result[i - lo] for i, _tok in pairs if (i - lo) in rel_result}
+
+    async def _detect_batch_ask(
+        self,
+        nb_text: str,
+        tokens: list[tuple[int, int, str]],
+        pairs: list[tuple[int, tuple[int, int, str]]],
+        lo: int,
+        cache_key: tuple[object, ...],
+    ) -> dict[int, float]:
+        """Issue one detection batch request and write it to the caches."""
+        state = render_detection_state(nb_text)
         questions: dict[str, Noul] = {
-            f"tok_{i}": Noul(
+            f"tok_{i - lo}": Noul(
                 instructions={
                     "TOKEN": tok[2].strip(),
-                    "POSITION": i,
+                    "POSITION": i - lo,
                     "LEFT": tokens[i - 1][2].strip() if i > 0 else "",
                     "RIGHT": tokens[i + 1][2].strip() if i + 1 < len(tokens) else "",
                 }
@@ -492,26 +1004,37 @@ class JevNER:
         response = await self._system_one(
             state=state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
         )
-        batch: dict[int, float] = {}
+        rel_scores: dict[int, float] = {}
         for i, _tok in pairs:
-            answer = response.nouls.get(f"tok_{i}")
+            answer = response.nouls.get(f"tok_{i - lo}")
             if answer is None:
                 logger.warning("JevNER got no detection answer for tok_%d, skipped.", i)
                 continue
-            batch[i] = float(answer.noul)
-        return batch
+            rel_scores[i - lo] = float(answer.noul)
+        if rel_scores:
+            self._detect_cache.write(cache_key, rel_scores)
+            if self._disk is not None:
+                self._disk.write(
+                    self._disk_key(cache_key), {str(k): v for k, v in rel_scores.items()}
+                )
+        # REL-keyed: single-flight waiters map through their own window-local lo.
+        return rel_scores
 
     async def _detect_regions(
-        self, window_text: str, tokens: list[tuple[int, int, str]]
-    ) -> tuple[list[tuple[int, int, str]], list[int], list[list[tuple[int, int, str]]]]:
+        self, source: str, window_text: str, tokens: list[tuple[int, int, str]], base: int = 0
+    ) -> tuple[
+        list[tuple[int, int, str]], list[int], list[list[tuple[int, int, str]]], dict[int, float]
+    ]:
         """Detect entity token regions within one window.
 
         Submits one Noul question per token ("is this token part of a
         named entity?"), filters hits by threshold, and reassembles
         them into regions by positional adjacency. This mirrors the
         token-level prediction of the BertNER base model and treats
-        every tokenization shape alike. Results are cached in-process
-        by window-text hash; repeated windows cost zero requests.
+        every tokenization shape alike. Results are cached at two
+        levels (whole-window fast path keyed by window hash; per-batch
+        neighborhood answers keyed window-independently); repeated
+        windows and the 50% window overlap cost zero requests.
 
         Concurrency: every batch of the first pass is independent, so
         all fly at once (the former sequential loop cost one round
@@ -522,35 +1045,52 @@ class JevNER:
         (only tokens that would have passed early are re-asked).
 
         Args:
+            source: The full source text (token offsets are global).
             window_text: The window text (an exact source substring;
-                used to render the state).
+                keys the whole-window fast path).
             tokens: Window tokens with offsets anchored to the source.
+            base: This window's first token index in the full-source token
+                sequence; detection batches align on ABSOLUTE positions
+                (boundaries at (base+i) % DETECT_BATCH_SIZE == 0), so
+                overlapping windows produce identical neighborhoods and
+                the neighborhood cache dedups the 50% overlap.
 
         Returns:
             (all window tokens, hit token indices, strict contiguous
-            regions); tokens carry source-global character offsets.
+            regions, per-token Noul scores); tokens carry source-global
+            character offsets. Scores ride along so the typing stage
+            can use edge-token confidence as a free boundary prior.
         """
         if not tokens:
-            return [], [], []
+            return [], [], [], {}
         cache_key = hashlib.sha256(window_text.encode("utf-8")).hexdigest()
         cached = self._detect_cache.read(cache_key)
         if cached is not None:
+            # A window hit skips every token question in the window.
+            self.usage.cache_hits += len(tokens)
             return cast(
-                "tuple[list[tuple[int, int, str]], list[int], list[list[tuple[int, int, str]]]]",
+                "tuple[list[tuple[int, int, str]], list[int],"
+                " list[list[tuple[int, int, str]]], dict[int, float]]",
                 cached,
             )
-        state = render_detection_state(window_text)
         # First pass: all batches independent -> all in flight at once.
-        indexed: list[tuple[int, tuple[int, int, str]]] = list(enumerate(tokens))
+        # Batch boundaries sit at absolute token indices that are multiples
+        # of DETECT_BATCH_SIZE (not at every window's local zero), so a
+        # token questioned in two overlapping windows lands in the same
+        # batch, same neighborhood, same cache key exactly once.
         first_pass: list[list[tuple[int, tuple[int, int, str]]]] = []
-        for raw_batch in batched(indexed, DETECT_BATCH_SIZE):
-            pairs = [p for p in raw_batch if p is not None]
-            if pairs:
-                first_pass.append(pairs)
+        pending_batch: list[tuple[int, tuple[int, int, str]]] = []
+        for i, tok in enumerate(tokens):
+            if pending_batch and (base + i) % DETECT_BATCH_SIZE == 0:
+                first_pass.append(pending_batch)
+                pending_batch = []
+            pending_batch.append((i, tok))
+        if pending_batch:
+            first_pass.append(pending_batch)
         scores: dict[int, float] = {}
         first_results: list[dict[int, float]] = list(
             await asyncio.gather(
-                *(self._detect_batch(state, tokens, pairs) for pairs in first_pass)
+                *(self._detect_batch(source, tokens, pairs) for pairs in first_pass)
             )
         )
         for batch_scores in first_results:
@@ -570,7 +1110,7 @@ class JevNER:
                     if not indices:
                         continue
                     recheck_tasks.append(
-                        self._detect_batch(state, tokens, [(i, tokens[i]) for i in indices])
+                        self._detect_batch(source, tokens, [(i, tokens[i]) for i in indices])
                     )
             recheck_results: list[dict[int, float]] = list(await asyncio.gather(*recheck_tasks))
             for resample in recheck_results:
@@ -594,7 +1134,7 @@ class JevNER:
         if current:
             regions.append(current)
         logger.debug("JevNER detected %d strict region(s).", len(regions))
-        result = (tokens, hits, regions)
+        result = (tokens, hits, regions, scores)
         self._detect_cache.write(cache_key, result)
         return result
 
@@ -651,8 +1191,10 @@ class JevNER:
 
     async def _type_window(
         self,
+        source: str,
         window_text: str,
         tokens: list[tuple[int, int, str]],
+        base: int,
         entity_types: tuple[EntityType, ...],
         prob_threshold: float,
     ) -> list[Entity]:
@@ -664,6 +1206,14 @@ class JevNER:
         included) becomes one Choice question batched for typing.
         Typing batches fly concurrently under the shared semaphore.
 
+        The typing request state is the source slice covering all
+        candidate spans plus a fixed margin (not the whole window) —
+        span judgments are local, and the slice keeps request bodies
+        small on long windows. Answers cache by (span context slice,
+        span text, threshold, full type fingerprint): the key depends
+        only on the span and its schema, never the window, so
+        overlapping windows and repeated runs hit cache.
+
         Typing supports multiple types: Choice probabilities are a
         competitive distribution; the selected option must clear
         prob_threshold as the primary type, and remaining types at or
@@ -671,8 +1221,10 @@ class JevNER:
         probability — a single type is never forced.
 
         Args:
+            source: The full source text (token offsets are global;
+                spans slice from it, fixing multi-window offsets).
             window_text: The window text (an exact source substring;
-                used to render the state).
+                keys the detection fast path).
             tokens: Window tokens with offsets anchored to the source.
             entity_types: The enabled entity types for this pass.
             prob_threshold: Primary-type probability floor.
@@ -681,7 +1233,12 @@ class JevNER:
             Entities recognized in this window (not yet merged across
             windows), offsets anchored to the source.
         """
-        _, hits, strict_regions = await self._detect_regions(window_text, tokens)
+        _, hits, strict_regions, scores = await self._detect_regions(
+            source, window_text, tokens, base
+        )
+        # Token offset pair -> Noul score: the free boundary prior for span
+        # pruning (an entity's edge tokens score high; weak edges are junk).
+        score_by_offset = {(tok[0], tok[1]): scores.get(idx, 0.0) for idx, tok in enumerate(tokens)}
         all_regions: list[list[tuple[int, int, str]]] = list(strict_regions)
         for region in self._bridge_regions(tokens, hits, strict_regions):
             if region not in all_regions:
@@ -689,49 +1246,110 @@ class JevNER:
         if not all_regions:
             return []
         # Generate every contiguous sub-span in each region; edge punctuation
-        # stripping moves offsets with it so span text stays an exact substring
+        # stripping moves offsets with it so span text stays an exact substring.
+        # Offsets index the SOURCE: region token offsets are source-global, and
+        # slicing window_text here would clamp garbage on every window that
+        # does not start at source position 0.
         spans: list[tuple[str, int, int]] = []
+        region_ids: list[int] = []
         seen: set[tuple[str, int, int]] = set()
-        for region in all_regions:
+        for rid, region in enumerate(all_regions):
             n = len(region)
             for i in range(n):
                 for length in range(1, min(MAX_ENTITY_TOKENS, n - i) + 1):
                     raw_start = region[i][0]
                     raw_end = region[i + length - 1][1]
-                    text, start, end = strip_span(window_text, raw_start, raw_end)
+                    text, start, end = strip_span(source, raw_start, raw_end)
                     key = text.strip()
                     # Skip blank, duplicate, or punctuation-only candidates
                     if not key or (text, start, end) in seen:
                         continue
                     if not any(ch.isalnum() for ch in key):
                         continue
+                    # Local pruning (A5): stopword edges are almost never entity
+                    # boundaries, and a sub-span whose edge token scored weakly
+                    # in detection is a bad boundary — both cost zero API calls.
+                    if bad_span_edge(text):
+                        continue
+                    if (
+                        score_by_offset.get((region[i][0], region[i][1]), 0.0) < EDGE_SCORE_MIN
+                        or score_by_offset.get(
+                            (region[i + length - 1][0], region[i + length - 1][1]), 0.0
+                        )
+                        < EDGE_SCORE_MIN
+                    ):
+                        continue
                     seen.add((text, start, end))
                     spans.append((text, start, end))
+                    region_ids.append(rid)
         if not spans:
             return []
-        # Typing cache hits: skip spans already judged (window overlap / repeats)
-        window_hash = hashlib.sha256(window_text.encode("utf-8")).hexdigest()
+        # Request state: the source slice covering all spans ± margin (equal to
+        # the whole text for short inputs). Shared by nomination and typing.
+        cover_lo = min(sp[1] for sp in spans)
+        cover_hi = max(sp[2] for sp in spans)
+        typing_text = source[
+            max(0, cover_lo - TYPING_MARGIN) : min(len(source), cover_hi + TYPING_MARGIN)
+        ]
+        # Competition typing (A3): spans compete as Choice options first; the
+        # shortlist goes through the same flat typing below. Skipped for small
+        # candidate sets where flat typing everything is cheaper.
+        if self._typing_strategy == "compete":
+            keep = await self._compete_nominate(typing_text, spans, region_ids, entity_types)
+            if not any(keep):
+                return []
+            spans = [sp for sp, k in zip(spans, keep, strict=True) if k]
+        # Typing cache hits: skip spans already judged (window overlap / repeats).
+        # Keys are window-independent (span context slice + text + threshold +
+        # full type fingerprint): the same span under a different type table —
+        # different packs, a schema A/B, a changed description or example —
+        # is a different question and must not reuse answers.
+        fingerprint = _type_fingerprint(entity_types)
+
+        def _span_cache_key(text: str, start: int, end: int) -> tuple[object, ...]:
+            ctx = source[max(0, start - TYPING_MARGIN) : min(len(source), end + TYPING_MARGIN)]
+            return (
+                "type",
+                hashlib.sha256(ctx.encode("utf-8")).hexdigest(),
+                text,
+                prob_threshold,
+                fingerprint,
+            )
+
         uncached: list[tuple[int, str]] = []
         cached_entities: dict[int, tuple[tuple[EntityType, float], ...]] = {}
-        for i, (text, _start, _end) in enumerate(spans):
-            cache_key = (window_hash, text, prob_threshold)
+        for i, (text, start, end) in enumerate(spans):
+            cache_key = _span_cache_key(text, start, end)
             hit = self._typing_cache.read(cache_key)
+            if hit is None and self._disk is not None:
+                blob = self._disk.read(self._disk_key(cache_key))
+                if blob is not None:
+                    hit = _decode_ranked(blob)
+                    self._typing_cache.write(cache_key, hit)
             if hit is not None:
+                self.usage.cache_hits += 1
                 cached_entities[i] = cast("tuple[tuple[EntityType, float], ...]", hit)
             else:
                 uncached.append((i, text))
         entities: list[Entity] = []
-        state = render_typing_state(window_text, entity_types)
         # Criteria carry labels only: descriptions already appear once in the
         # state ENTITY_TYPES table (repeating them per question balloons a
         # question from ~150 bytes to ~2KB; 64 per batch ~= 128KB, past the
         # 65,535-byte hard cap — the observed stable 500s came from exactly this).
         # Labels match the type-table keys; the model resolves them by lookup.
         criteria: dict[str, str | None] = {t.label: None for t in entity_types}
-        criteria[NONE_LABEL] = None
+        criteria[NONE_LABEL] = NONE_DESCRIPTION
+        criteria[PARTIAL_LABEL] = PARTIAL_DESCRIPTION
+        criteria[MIXED_LABEL] = MIXED_DESCRIPTION
+        # Answer decoding maps labels against the RESOLVED types of this call,
+        # never the taxonomy registry: types passed via entity_types (or a
+        # custom taxonomy) are legitimate questions whose labels are not
+        # registered, and the model must answer from the criteria labels anyway.
+        label_map: dict[str, EntityType] = {t.label: t for t in entity_types}
 
         async def _type_batch(
             pairs: list[tuple[int, str]],
+            batch_state: str,
         ) -> dict[int, tuple[tuple[EntityType, float], ...]]:
             """One typing batch request: map span index -> ranked type tuple;
             an empty tuple means NONE."""
@@ -740,7 +1358,7 @@ class JevNER:
                 for i, cand in pairs
             }
             response = await self._system_one(
-                state=state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
+                state=batch_state, questions=questions, extra_headers=LONG_CONTEXT_HEADER
             )
             batch: dict[int, tuple[tuple[EntityType, float], ...]] = {}
             for i, _cand in pairs:
@@ -749,11 +1367,12 @@ class JevNER:
                     logger.warning("JevNER got no typing answer for type_%d, skipped.", i)
                     batch[i] = ()
                     continue
-                # NONE veto: when the model judges a span a non-entity,
-                # no secondary types are collected — otherwise fragments slip in
-                # through low-probability secondary types bypassing the veto
-                # (observed with 0.25-0.5 fragment noise)
-                if answer.choice == NONE_LABEL:
+                # Veto: NONE (not an entity), PARTIAL (a truncated
+                # fragment), or MIXED (a name with glue words) all kill the
+                # span — no secondary types collected, otherwise fragments
+                # slip in through low-probability secondary probabilities
+                # bypassing the veto (observed with 0.25-0.5 fragment noise)
+                if answer.choice in VETO_LABELS:
                     batch[i] = ()
                     continue
                 # The primary type (selected option) must clear prob_threshold;
@@ -763,15 +1382,23 @@ class JevNER:
                 if primary_prob < prob_threshold:
                     batch[i] = ()
                     continue
-                primary = self._taxonomy._type_of(answer.choice)
+                primary = label_map.get(answer.choice)
+                if primary is None:
+                    logger.warning(
+                        "JevNER got unexpected typing label %r, treated as NONE.", answer.choice
+                    )
+                    batch[i] = ()
+                    continue
                 best_per_type[primary] = primary_prob
                 for label, prob in answer.probabilities.items():
-                    # NONE is the veto option, not an entity type; excluded from collection
-                    if label == NONE_LABEL or label == answer.choice:
+                    # Veto labels are not entity types; excluded from collection
+                    if label in VETO_LABELS or label == answer.choice:
                         continue
                     if prob < SECONDARY_TYPE_THRESHOLD:
                         continue
-                    etype = self._taxonomy._type_of(label)
+                    etype = label_map.get(label)
+                    if etype is None:
+                        continue
                     if etype not in best_per_type or prob > best_per_type[etype]:
                         best_per_type[etype] = float(prob)
                 batch[i] = tuple(sorted(best_per_type.items(), key=lambda kv: -kv[1]))
@@ -782,23 +1409,48 @@ class JevNER:
         # batch <= REQUEST_MAX_OPTIONS / options per question, capped by
         # TYPING_BATCH_SIZE (the gateway caps total options per request at 512; 422
         # beyond). batched() pads the last batch with None; filter them out.
-        options_per_question = len(entity_types) + 1
+        options_per_question = len(entity_types) + len(VETO_LABELS)
         batch_limit = min(TYPING_BATCH_SIZE, REQUEST_MAX_OPTIONS // options_per_question)
-        batches = [
-            [item for item in batch if item is not None]
-            for batch in batched(uncached, max(1, batch_limit))
-        ]
-        batches = [batch for batch in batches if batch]
+        uncached_sorted = sorted(uncached, key=lambda pair: spans[pair[0]][1])
+        batches: list[list[tuple[int, str]]] = []
+        current_batch: list[tuple[int, str]] = []
+        cluster_lo = 0
+        for i, text in uncached_sorted:
+            _t, start, end = spans[i]
+            lo = max(0, start - TYPING_MARGIN)
+            hi = min(len(source), end + TYPING_MARGIN)
+            if current_batch and (
+                len(current_batch) >= max(1, batch_limit) or hi - cluster_lo > TYPING_CLUSTER_CHARS
+            ):
+                batches.append(current_batch)
+                current_batch = []
+                cluster_lo = lo
+            if not current_batch:
+                cluster_lo = lo
+            current_batch.append((i, text))
+        if current_batch:
+            batches.append(current_batch)
+        # One state per batch: the slice covering that batch's spans ± margin —
+        # request states stay local even when spans scatter across a long doc.
+        batch_states: list[str] = []
+        for batch in batches:
+            lo = max(0, spans[batch[0][0]][1] - TYPING_MARGIN)
+            hi = min(len(source), spans[batch[-1][0]][2] + TYPING_MARGIN)
+            batch_states.append(render_typing_state(source[lo:hi], entity_types))
         if len(batches) <= 1 or self._max_workers <= 1:
-            batch_results = [await _type_batch(pairs) for pairs in batches]
+            batch_results = [
+                await _type_batch(pairs, bstate)
+                for pairs, bstate in zip(batches, batch_states, strict=True)
+            ]
         else:
             # Per-batch resilience (thread-pool-era semantics): a failed batch
             # logs its traceback and yields {} (spans fall back to NONE).
             async def _guarded_batch(
                 pairs: list[tuple[int, str]],
+                bstate: str,
             ) -> dict[int, tuple[tuple[EntityType, float], ...]]:
                 try:
-                    return await _type_batch(pairs)
+                    return await _type_batch(pairs, bstate)
                 except Exception as exc:
                     logger.warning(
                         "JevNER typing batch failed: %s\n%s", exc, traceback.format_exc()
@@ -806,11 +1458,21 @@ class JevNER:
                     return {}
 
             batch_results = list(
-                await asyncio.gather(*(_guarded_batch(pairs) for pairs in batches))
+                await asyncio.gather(
+                    *(
+                        _guarded_batch(pairs, bstate)
+                        for pairs, bstate in zip(batches, batch_states, strict=True)
+                    )
+                )
             )
         for pairs, result in zip(batches, batch_results, strict=True):
-            for i, text in pairs:
-                self._typing_cache.write((window_hash, text, prob_threshold), result.get(i, ()))
+            for i, _text in pairs:
+                _t, start, end = spans[i]
+                span_key = _span_cache_key(_t, start, end)
+                ranked = result.get(i, ())
+                self._typing_cache.write(span_key, ranked)
+                if self._disk is not None:
+                    self._disk.write(self._disk_key(span_key), _encode_ranked(ranked))
         # Combine: cache hits + this round; NONE (empty tuple) yields no entity
         all_ranked: dict[int, tuple[tuple[EntityType, float], ...]] = dict(cached_entities)
         for result in batch_results:
@@ -820,6 +1482,160 @@ class JevNER:
             if ranked:
                 entities.append(Entity(text=text, types=ranked, start=start, end=end))
         return entities
+
+    async def _compete_nominate(
+        self,
+        typing_text: str,
+        spans: list[tuple[str, int, int]],
+        region_ids: list[int],
+        entity_types: tuple[EntityType, ...],
+    ) -> list[bool]:
+        """Shortlist candidate spans by span competition, region by region (A3).
+
+        Candidate span texts become the options of a nomination Choice
+        ("which option is exactly one complete entity?"): probability
+        mass is shared, so a complete name beats its own fragments —
+        fragments no longer pass on a lonely 0.5 the way independent
+        questions allowed. Each round removes its picks and re-asks,
+        which surfaces nested entities the previous single answer
+        overshadowed ("江苏" after "江苏南京").
+
+        Nomination runs PER REGION: region option pools stay small
+        (a whole-window pool capped the picks per window and broke
+        recall on entity-dense long documents), regions nominate
+        concurrently, and regions too small to be worth a nomination
+        pass through to flat typing directly. The shortlist then goes
+        through ordinary flat typing (vetoes, thresholds, multi-type
+        collection) unchanged.
+
+        Args:
+            typing_text: The typing-neighborhood state text.
+            spans: Candidate (text, start, end) triples.
+            region_ids: Region index per span (aligned with spans).
+            entity_types: The enabled entity types for this pass.
+
+        Returns:
+            A keep mask aligned with spans (True = keep for typing).
+        """
+        # Hybrid pool sizing: a window whose UNIQUE surface forms fit one
+        # nomination question competes window-wide (maximum competition beat
+        # per-region pools on short texts); larger windows nominate per region
+        # (a window-wide pool caps distinct picks and breaks recall on
+        # entity-dense long documents).
+        if len({sp[0] for sp in spans}) <= NOMINATE_POOL_MAX:
+            picked = await self._nominate_region(
+                typing_text, list(range(len(spans))), spans, entity_types
+            )
+            picked_set = set(picked)
+            return [i in picked_set for i in range(len(spans))]
+        by_region: dict[int, list[int]] = {}
+        for idx, rid in enumerate(region_ids):
+            by_region.setdefault(rid, []).append(idx)
+        keep = [False] * len(spans)
+        tasks = []
+        for indices in by_region.values():
+            if len(indices) < COMPETE_MIN_SPANS:
+                for i in indices:
+                    keep[i] = True
+            else:
+                tasks.append(self._nominate_region(typing_text, indices, spans, entity_types))
+        results: list[list[int]] = list(await asyncio.gather(*tasks))
+        for picked in results:
+            for i in picked:
+                keep[i] = True
+        return keep
+
+    async def _nominate_region(
+        self,
+        typing_text: str,
+        indices: list[int],
+        spans: list[tuple[str, int, int]],
+        entity_types: tuple[EntityType, ...],
+    ) -> list[int]:
+        """Nominate inside one region's option pool; returns kept span indices."""
+        options: dict[str, None] = {}
+        for i in indices:
+            options.setdefault(spans[i][0])
+        picked_texts: set[str] = set()
+        for _round in range(NOMINATION_ROUNDS):
+            keys = [k for k in options if k not in picked_texts]
+            if not keys:
+                break
+            probs = await self._nominate_ask(typing_text, keys, entity_types)
+            ranked = sorted(
+                ((k, v) for k, v in probs.items() if v >= NOMINATE_MIN),
+                key=lambda kv: -kv[1],
+            )
+            fresh = [k for k, _v in ranked[:NOMINATE_TOP] if k not in picked_texts]
+            if not fresh:
+                break
+            picked_texts.update(fresh)
+        return [i for i in indices if spans[i][0] in picked_texts]
+
+    async def _nominate_ask(
+        self,
+        typing_text: str,
+        keys: list[str],
+        entity_types: tuple[EntityType, ...],
+    ) -> dict[str, float]:
+        """One nomination round: every option chunk asked concurrently.
+
+        Args:
+            typing_text: The typing-neighborhood state text.
+            keys: Candidate option texts for this round.
+            entity_types: The enabled entity types (fingerprint keys the
+                answer cache together with the option set).
+
+        Returns:
+            Option text -> nomination probability (missing options
+            never qualified and stay absent).
+        """
+        cache_key = (
+            "nom",
+            hashlib.sha256(typing_text.encode("utf-8")).hexdigest(),
+            tuple(keys),
+            _type_fingerprint(entity_types),
+        )
+        cached = self._typing_cache.read(cache_key)
+        if cached is None and self._disk is not None:
+            blob = self._disk.read(self._disk_key(cache_key))
+            if blob is not None:
+                cached = {str(k): float(v) for k, v in blob.items()}
+                self._typing_cache.write(cache_key, cached)
+        if cached is not None:
+            self.usage.cache_hits += 1
+            return cast("dict[str, float]", cached)
+        state = render_nomination_state(typing_text, entity_types)
+        # Options per question <= 63 (+NONE): keeps every question inside the
+        # per-question option budget with headroom for the gateway's 512 total.
+        chunk_size = min(len(keys), REQUEST_MAX_OPTIONS // 8)
+        chunks = [
+            [k for k in chunk if k is not None] for chunk in batched(keys, max(1, chunk_size))
+        ]
+        chunks = [chunk for chunk in chunks if chunk]
+
+        async def _ask(chunk_keys: list[str]) -> dict[str, float]:
+            criteria: dict[str, str | None] = {k: None for k in chunk_keys}
+            criteria[NONE_LABEL] = None
+            response = await self._system_one(
+                state=state,
+                questions={"nom": Choice(instructions=NOMINATE_INSTRUCTIONS, criteria=criteria)},
+                extra_headers=LONG_CONTEXT_HEADER,
+            )
+            answer = response.choices.get("nom")
+            if answer is None:
+                logger.warning("JevNER got no nomination answer, chunk skipped.")
+                return {}
+            return {k: float(answer.probabilities.get(k, 0.0)) for k in chunk_keys}
+
+        results: list[dict[str, float]] = list(await asyncio.gather(*(_ask(c) for c in chunks)))
+        merged: dict[str, float] = {}
+        for result in results:
+            merged.update(result)
+        self._typing_cache.write(cache_key, merged)
+        if self._disk is not None:
+            self._disk.write(self._disk_key(cache_key), merged)
+        return merged
 
     def _combine(self, entities: list[Entity], deduplicate: bool) -> list[Entity]:
         """Merge entities across windows (per-occurrence dedup + type union).
@@ -884,7 +1700,13 @@ class JevNER:
         pending: list[str] = []
         for name in names:
             cached = self._gender_cache.read(name)
+            if cached is None and self._disk is not None:
+                blob = self._disk.read(self._disk_key(("gender", name)))
+                if blob is not None:
+                    cached = (Gender(blob[0]), float(blob[1]))
+                    self._gender_cache.write(name, cached)
             if cached is not None:
+                self.usage.cache_hits += 1
                 results[name] = cast("tuple[Gender, float]", cached)
             elif name not in pending:
                 pending.append(name)
@@ -913,6 +1735,8 @@ class JevNER:
                     continue
                 pair = (gender, prob)
                 self._gender_cache.write(name, pair)
+                if self._disk is not None:
+                    self._disk.write(self._disk_key(("gender", name)), [gender.value, prob])
                 results[name] = pair
         return results
 
@@ -932,6 +1756,7 @@ class JevNER:
         window_size: int | None,
         stride: int | None,
         deduplicate: bool,
+        flatten_fragments: bool,
     ) -> list[EntityNode]:
         """Async recognition core (the whole pipeline); parameter meanings
         and exceptions are documented on __call__."""
@@ -952,13 +1777,13 @@ class JevNER:
         # duplicate chars), so token offsets stay source-anchored — spans and
         # entities carry source-global offsets, nesting derives from containment
         if fast_mode:
-            windows = [(s, self._tokenizer.window_tokens(s))]
+            windows = [(s, self._tokenizer.window_tokens(s), 0)]
         else:
             windows = self._tokenizer.windows(s, ws, st)
         # Request-body guard: window text dominates the body; over budget fails fast
         # (an oversized request returns an opaque 500 rather than an actionable
         # error, so this raises with actionable guidance)
-        for window_text, _toks in windows:
+        for window_text, _toks, _base in windows:
             if len(window_text.encode("utf-8")) > REQUEST_STATE_BUDGET:
                 raise ValueError(
                     "A sliding window's UTF-8 size exceeds the request body budget "
@@ -972,25 +1797,58 @@ class JevNER:
         # path logs and skips failed windows as empty results.
         if len(windows) <= 1 or self._max_workers <= 1:
             window_entities = [
-                await self._type_window(window_text, toks, types, prob_threshold)
-                for window_text, toks in windows
+                await self._type_window(s, window_text, toks, base, types, prob_threshold)
+                for window_text, toks, base in windows
             ]
         else:
 
             async def _guarded_window(
-                window_text: str, toks: list[tuple[int, int, str]]
+                window_text: str, toks: list[tuple[int, int, str]], base: int
             ) -> list[Entity]:
                 try:
-                    return await self._type_window(window_text, toks, types, prob_threshold)
+                    return await self._type_window(
+                        s, window_text, toks, base, types, prob_threshold
+                    )
                 except Exception as exc:
                     logger.warning("JevNER window failed: %s\n%s", exc, traceback.format_exc())
                     return []
 
             window_entities = list(
-                await asyncio.gather(*(_guarded_window(wt, toks) for wt, toks in windows))
+                await asyncio.gather(
+                    *(_guarded_window(wt, toks, base) for wt, toks, base in windows)
+                )
             )
         entities: list[Entity] = [e for ents in window_entities for e in ents]
         merged = self._combine(entities, deduplicate)
+        # Per-type conventions (A6): minimum entity length and bracket
+        # inclusion. Applied before the PERSON upgrade so bracket extension
+        # rebuilds plain Entity objects only.
+        min_chars_map = {t.label: t.min_chars for t in types}
+        brackets_map = {t.label: t.include_brackets for t in types}
+        refined: list[Entity] = []
+        for e in merged:
+            if len(e.text) < min_chars_map.get(e.type.label, 1):
+                continue
+            if (
+                brackets_map.get(e.type.label, False)
+                and e.start > 0
+                and e.end < len(s)
+                and s[e.start - 1] in "《〈"
+                and s[e.end] in "》〉"
+            ):
+                # Book-title conventions: enclosing brackets belong to the entity.
+                e = Entity(
+                    text=s[e.start - 1 : e.end + 1],
+                    types=e.types,
+                    start=e.start - 1,
+                    end=e.end + 1,
+                )
+            refined.append(e)
+        merged = refined
+        # Flat-F1 convention mode (A7): drop same-type fragments, merge
+        # same-type neighbors split by delimiters. Default keeps nesting.
+        if flatten_fragments:
+            merged = _flatten_fragments(s, merged)
         if with_gender:
             # Upgrade PERSON entities to Person (with gender), then build the tree;
             # the PERSON label always exists in a taxonomy (fixed semantic anchor)
@@ -1026,6 +1884,7 @@ class JevNER:
         window_size: int | None = None,
         stride: int | None = None,
         deduplicate: bool = True,
+        flatten_fragments: bool = False,
     ) -> list[EntityNode]:
         """Recognize named entities in a text; returns the nesting forest.
 
@@ -1055,6 +1914,10 @@ class JevNER:
                 window_size // 2.
             deduplicate: Whether to merge cross-window duplicates per
                 occurrence (type union).
+            flatten_fragments: Flat-F1 convention mode (default False):
+                drop entities contained by a same-type entity and merge
+                same-type neighbors split by delimiters — serves flat
+                gold standards; the default output keeps nesting.
 
         Returns:
             The entity nesting forest: top-level (uncontained)
@@ -1085,6 +1948,7 @@ class JevNER:
                 window_size=window_size,
                 stride=stride,
                 deduplicate=deduplicate,
+                flatten_fragments=flatten_fragments,
             )
         )
 
@@ -1100,6 +1964,7 @@ class JevNER:
         window_size: int | None = None,
         stride: int | None = None,
         deduplicate: bool = True,
+        flatten_fragments: bool = False,
     ) -> list[EntityNode]:
         """Async twin of __call__: the same pipeline, awaitable.
 
@@ -1121,6 +1986,7 @@ class JevNER:
                 window_size=window_size,
                 stride=stride,
                 deduplicate=deduplicate,
+                flatten_fragments=flatten_fragments,
             ),
             loop,
         )
@@ -1143,6 +2009,8 @@ class JevNER:
         The instance must not be used afterwards (the underlying client
         is closed); create a new JevNER instead.
         """
+        if self._disk is not None:
+            self._disk.close()
         with self._loop_lock:
             loop = self._loop
             thread = self._loop_thread
@@ -1186,6 +2054,8 @@ class JevNER:
     async def aclose(self) -> None:
         """Async close: release the client and stop the loop without
         blocking the caller's event loop on the loop-thread join."""
+        if self._disk is not None:
+            self._disk.close()
         with self._loop_lock:
             loop = self._loop
             self._loop = None

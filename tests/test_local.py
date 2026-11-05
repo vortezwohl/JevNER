@@ -55,7 +55,7 @@ assert DEFAULT_WINDOW_SIZE == REQUEST_STATE_BUDGET // BYTES_PER_TOKEN_WORST == 1
 assert REQUEST_MAX_BYTES == 65_535, "server request-body hard limit"
 wins = tokenizer.windows(ZH_TEXT, window_size=128, stride=64)
 assert len(wins) == 1, "short text should be one whole window"
-assert wins[0][0] == ZH_TEXT and len(wins[0][1]) == counts[ZH_TEXT], (
+assert wins[0][0] == ZH_TEXT and len(wins[0][1]) == counts[ZH_TEXT] and wins[0][2] == 0, (
     "window text should equal the source"
 )
 print(f"[4] Single window for short text + 12k default ({DEFAULT_WINDOW_SIZE} tokens): OK")
@@ -64,11 +64,13 @@ print(f"[4] Single window for short text + 12k default ({DEFAULT_WINDOW_SIZE} to
 long_zh = "。".join(f"第{i}句话提到北京和广州以及华为公司" for i in range(80))
 wins = tokenizer.windows(long_zh, window_size=64, stride=32)
 assert len(wins) > 1, "long text should split into multiple windows"
-covered = "".join(tok for _wt, w in wins for _s, _e, tok in w)
+# base indices advance by stride and index the source token stream
+assert [b for _wt, _w, b in wins] == [i * 32 for i in range(len(wins))], "bases follow stride"
+covered = "".join(tok for _wt, w, _b in wins for _s, _e, tok in w)
 assert "北京" in covered and "广州" in covered and "华为" in covered, (
     "key entities must appear in the windows"
 )
-for window_text, w in wins:
+for window_text, w, _b in wins:
     c_start, c_end = w[0][0], w[-1][1]
     assert window_text == long_zh[c_start:c_end], "window text must be the source character range"
     for start, end, tok in w:
@@ -242,6 +244,85 @@ person = Person(
 )
 assert "MALE" in str(entity_tree([person])), "rendering should contain gender"
 print("[12] Person 树渲染（含性别）: OK")
+
+# --- phase 3/5/7 offline coverage ---
+
+# from_json object form: examples / counter_examples / min_chars / include_brackets
+obj = EntityTaxonomy.from_json(
+    {
+        "entity_types": {
+            "BRAND": {
+                "description": "A brand name.",
+                "examples": ["Apple", "Nike"],
+                "counter_examples": ["generic nouns like 'phone'"],
+                "min_chars": 2,
+                "include_brackets": True,
+            }
+        },
+        "entity_packs": {"ECOM": ["BRAND"]},
+        "default_packs": ["ECOM"],
+    }
+)
+brand = obj.entity_types["BRAND"]
+assert brand.examples == ("Apple", "Nike") and brand.counter_examples != ()
+assert brand.min_chars == 2 and brand.include_brackets is True
+with pytest.raises(ValueError):
+    EntityTaxonomy.from_json({"entity_types": {"X": {"examples": ["ok"]}}})  # no description
+with pytest.raises(ValueError):
+    EntityTaxonomy.from_json({"entity_types": {"X": {"description": "d", "min_chars": 0}}})
+print("[13] from_json object form (guides/min_chars/brackets): OK")
+
+# built-in types carry guides and conventions
+assert DEFAULT_TAXONOMY.entity_types["PERSON"].min_chars == 2
+assert DEFAULT_TAXONOMY.entity_types["PERSON"].counter_examples != ()
+assert DEFAULT_TAXONOMY.entity_types["WORK_OF_ART"].include_brackets is True
+print("[14] built-in type guides loaded: OK")
+
+# stopword-edge pruning: Chinese particles and Latin prepositions at edges
+from jevner.ner import bad_span_edge  # noqa: E402
+
+assert bad_span_edge("的张伟")
+assert bad_span_edge("张伟的")
+assert bad_span_edge("the United States")
+assert bad_span_edge("Ministry of")
+assert not bad_span_edge("张伟")
+assert not bad_span_edge("Bank of America")  # internal preposition survives
+assert not bad_span_edge("北京大学")
+print("[15] bad_span_edge (stopword edges, internal words survive): OK")
+
+# A7 flatten: same-type fragments dropped, adjacent same-type merged
+from jevner.ner import _flatten_fragments  # noqa: E402
+
+src_text = "Tim Cook 在 Bank of America 工作"
+t_per = T["PERSON"]
+frag_case = [
+    Entity(text="Tim Cook", types=((t_per, 0.99),), start=0, end=8),
+    Entity(text="Tim", types=((t_per, 0.90),), start=0, end=3),
+]
+flat1 = _flatten_fragments(src_text, frag_case)
+assert [e.text for e in flat1] == ["Tim Cook"], f"same-type fragment dropped: {flat1}"
+split_case = [
+    Entity(text="Tim", types=((t_per, 0.99),), start=0, end=3),
+    Entity(text="Cook", types=((t_per, 0.95),), start=4, end=8),
+]
+flat2 = _flatten_fragments(src_text, split_case)
+assert [e.text for e in flat2] == ["Tim Cook"], f"adjacent same-type merged: {flat2}"
+mixed_case = [
+    Entity(text="江苏南京", types=((T["GPE"], 0.99),), start=0, end=4),
+    Entity(text="江苏", types=((T["GPE"], 1.0),), start=0, end=2),  # nested same type
+    Entity(text="南京", types=((T["GPE"], 0.9),), start=2, end=4),
+]
+flat3 = _flatten_fragments("江苏南京", mixed_case)
+assert [e.text for e in flat3] == ["江苏南京"], f"nested same-type collapsed: {flat3}"
+print("[16] _flatten_fragments (fragments/adjacent/nested): OK")
+
+# disk-cache codecs roundtrip: ranked types survive encode -> decode
+from jevner.ner import _decode_ranked, _encode_ranked  # noqa: E402
+
+ranked = ((T["GPE"], 0.9), (T["LOC"], 0.7))
+assert _decode_ranked(_encode_ranked(ranked)) == ranked
+assert _decode_ranked(_encode_ranked(())) == ()
+print("[17] ranked-type disk codec roundtrip: OK")
 
 print()
 print("All offline tests passed.")

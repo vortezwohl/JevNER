@@ -1,0 +1,24 @@
+{"id": "Chinese", "text": "你好，我的名字是陈嘉禾，来自江苏南京。", "expected": "陈嘉禾"}
+{"id": "Japanese", "text": "田中さんは東京大学の学生です。", "expected": "田中"}
+{"id": "Korean", "text": "김철수 씨는 서울에서 삽니다.", "expected": "서울"}
+{"id": "Thai", "text": "สวัสดีครับ ผมชื่อสมชาย มาจากกรุงเทพมหานคร", "expected": "สมชาย"}
+{"id": "Vietnamese", "text": "Nguyễn Văn An làm việc tại Hà Nội.", "expected": "Hà Nội"}
+{"id": "Indonesian", "text": "Presiden Joko Widodo berkunjung ke Jakarta.", "expected": "Jakarta"}
+{"id": "Malay", "text": "Hai, nama saya Ahmad, saya berasal dari Kuala Lumpur.", "expected": "Kuala Lumpur"}
+{"id": "Filipino", "text": "Si Maria ay nagtatrabaho sa Maynila.", "expected": "Maria"}
+{"id": "Hindi", "text": "राम शर्मा दिल्ली में रहता है।", "expected": "राम"}
+{"id": "Arabic", "text": "مرحبا، اسمي محمد وأعمل في شركة أرامكو في الرياض.", "expected": "محمد"}
+{"id": "Hebrew", "text": "שלום, שמי דוד ואני גר בירושלים.", "expected": "דוד"}
+{"id": "Turkish", "text": "Ahmet İstanbul'da bir şirkette çalışıyor.", "expected": "Ahmet"}
+{"id": "English", "text": "Hi, i'm Vortez Wohl, working at Google in London.", "expected": "Vortez Wohl"}
+{"id": "French", "text": "Bonjour, je m'appelle Marie Dubois et j'habite à Paris.", "expected": "Marie Dubois"}
+{"id": "German", "text": "Guten Tag, ich heiße Hans Müller und wohne in Berlin.", "expected": "Hans Müller"}
+{"id": "Spanish", "text": "Hola, me llamo Carlos García y vivo en Madrid.", "expected": "Carlos García"}
+{"id": "Portuguese", "text": "Olá, meu nome é João Silva e moro em São Paulo.", "expected": "João Silva"}
+{"id": "Italian", "text": "Ciao, mi chiamo Luca Rossi e abito a Roma.", "expected": "Luca Rossi"}
+{"id": "Russian", "text": "Привет, меня зовут Владимир Путин, я из Москвы.", "expected": "Владимир"}
+{"id": "Dutch", "text": "Hallo, ik heet Jan de Vries en ik woon in Amsterdam.", "expected": "Jan de Vries"}
+{"id": "Polish", "text": "Cześć, nazywam się Jan Kowalski i mieszkam w Warszawie.", "expected": "Kowalski"}
+{"id": "English (US)", "text": "Elon Musk founded SpaceX in California.", "expected": "Elon Musk"}
+{"id": "Portuguese (BR)", "text": "A empresa Petrobras está sediada no Rio de Janeiro.", "expected": "Rio"}
+{"id": "Spanish (MX)", "text": "Los immigrantes llegaron a Ciudad de México.", "expected": "México"}

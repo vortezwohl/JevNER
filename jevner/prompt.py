@@ -98,14 +98,33 @@ def render_detection_state(source_text: str) -> str:
     return cast(str, template.render(markdown=False))
 
 
+def _type_entry(t: EntityType) -> str | dict[str, object]:
+    """Render one type-table entry: description plus optional guides.
+
+    Examples render as an "e.g." list and counter-examples as a "not"
+    list — positive and negative boundary guides for the model. Types
+    without guides keep the plain description string (wire-compatible
+    with the original table shape).
+    """
+    if not t.examples and not t.counter_examples:
+        return t.description
+    entry: dict[str, object] = {"description": t.description}
+    if t.examples:
+        entry["e.g."] = list(t.examples[:3])
+    if t.counter_examples:
+        entry["not"] = list(t.counter_examples[:3])
+    return entry
+
+
 def render_typing_state(source_text: str, entity_types: tuple[EntityType, ...]) -> str:
     """Render the state prompt for an entity-typing request.
 
     Each question picks, as a Choice, the best entity type for
     INPUT.SPAN from CONTEXT.ENTITY_TYPES; NONE means the span is not
     a named entity. With open types, every EntityType carries its own
-    label and description, and the type table is generated directly
-    from the argument (no global description table involved).
+    label and description (plus optional e.g./not guides), and the
+    type table is generated directly from the argument (no global
+    description table involved).
 
     Args:
         source_text: The window text (shared context for all questions
@@ -125,6 +144,7 @@ def render_typing_state(source_text: str, entity_types: tuple[EntityType, ...]) 
     template.instruction = [
         "Read INPUT.SPAN together with its surrounding context in SOURCE_TEXT.",
         "Match the span's meaning in context against the type definitions in CONTEXT.ENTITY_TYPES.",
+        "Treat each type's e.g. entries as positive guides and its not entries as exclusions.",
         (
             "Answer NONE when the span is a common word, or sticks to "
             "a verb, preposition, particle, or punctuation."
@@ -136,7 +156,7 @@ def render_typing_state(source_text: str, entity_types: tuple[EntityType, ...]) 
         "unspaced scripts to right-to-left scripts."
     )
     template.context = {
-        "ENTITY_TYPES": {t.label: t.description for t in entity_types},
+        "ENTITY_TYPES": {t.label: _type_entry(t) for t in entity_types},
         "note_on_nested_spans": (
             "A span may sit inside a longer entity. Type each span on its own "
             "content: the inner and the outer span answer separately."
@@ -167,6 +187,64 @@ def render_typing_state(source_text: str, entity_types: tuple[EntityType, ...]) 
             "Judge the span by its actual meaning in SOURCE_TEXT, "
             "not by surface similarity to a type name."
         ),
+    ]
+    return cast(str, template.render(markdown=False))
+
+
+def render_nomination_state(source_text: str, entity_types: tuple[EntityType, ...]) -> str:
+    """Render the state prompt for a span-competition nomination request.
+
+    Each question offers candidate span texts as Choice options and
+    asks which option is exactly one complete entity — spans COMPETE
+    for probability mass, so fragments lose against complete names
+    instead of being judged in isolation. Rounds remove their picks
+    and re-ask, surfacing nested entities the previous single answer
+    overshadowed.
+
+    Args:
+        source_text: The typing-neighborhood text (shared context).
+        entity_types: The enabled entity types (the ENTITY_TYPES table
+            with e.g./not guides rides in CONTEXT).
+
+    Returns:
+        The state as a JSON string, for use in a system_one request.
+    """
+    template = GeneralTemplate()
+    template.role = "You are an expert multilingual named-entity-recognition annotator."
+    template.objective = (
+        "For every question, pick the option that is exactly one complete "
+        "named entity of a type in CONTEXT.ENTITY_TYPES."
+    )
+    template.instruction = [
+        "An option qualifies only when it is the complete entity by itself.",
+        (
+            "An option fails when it truncates a longer name, sticks to verbs, "
+            "prepositions, titles, or modifiers, or is not an entity at all."
+        ),
+        "Treat each type's e.g. entries as positive guides and its not entries as exclusions.",
+        "If no option qualifies, choose NONE.",
+    ]
+    template.capability = (
+        "You annotate named entities in every language with equal care, from "
+        "unspaced scripts to right-to-left scripts."
+    )
+    template.context = {
+        "ENTITY_TYPES": {t.label: _type_entry(t) for t in entity_types},
+        "example": (
+            'In "阿里巴巴集团发布财报", the option "阿里巴巴集团" qualifies while '
+            '"阿里巴巴集" (truncated) and "集团发布" (glued) do not.'
+        ),
+    }
+    template.input = {"SOURCE_TEXT": source_text}
+    template.output_dtype = "One option label per question."
+    template.output_format = (
+        "A label of one of the question's own options, or NONE when no option qualifies."
+    )
+    template.output_example = {"choice": "阿里巴巴集团"}
+    template.constraint = [
+        "Choose only a label among the question's own options or NONE.",
+        "Judge each option against the type definitions in CONTEXT.ENTITY_TYPES.",
+        "Never output any other string.",
     ]
     return cast(str, template.render(markdown=False))
 

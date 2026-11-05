@@ -1,0 +1,233 @@
+{
+  "tag": "dev-phase7-flatten",
+  "meta": {
+    "date": "2026-11-05 12:21:56",
+    "git": "f90213d",
+    "model": "baseten/mammoth-1",
+    "split": "dev",
+    "limit": null,
+    "max_workers": 8,
+    "typing_strategy": "flat",
+    "flatten": true
+  },
+  "datasets": {
+    "msra": {
+      "items": 50,
+      "failed_items": [],
+      "gold": 65,
+      "pred": 67,
+      "tp": 45,
+      "precision": 0.6716,
+      "recall": 0.6923,
+      "f1": 0.6818,
+      "per_type": {
+        "loc": {
+          "precision": 0.5833,
+          "recall": 0.7,
+          "f1": 0.6364,
+          "gold": 30,
+          "pred": 36,
+          "tp": 21
+        },
+        "org": {
+          "precision": 0.6667,
+          "recall": 0.7,
+          "f1": 0.6829,
+          "gold": 20,
+          "pred": 21,
+          "tp": 14
+        },
+        "per": {
+          "precision": 1.0,
+          "recall": 0.6667,
+          "f1": 0.8,
+          "gold": 15,
+          "pred": 10,
+          "tp": 10
+        }
+      }
+    },
+    "resume": {
+      "items": 50,
+      "failed_items": [],
+      "gold": 143,
+      "pred": 101,
+      "tp": 49,
+      "precision": 0.4851,
+      "recall": 0.3427,
+      "f1": 0.4016,
+      "per_type": {
+        "cont": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "gold": 4,
+          "pred": 5,
+          "tp": 0
+        },
+        "edu": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "gold": 14,
+          "pred": 10,
+          "tp": 0
+        },
+        "loc": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "gold": 0,
+          "pred": 30,
+          "tp": 0
+        },
+        "name": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "gold": 11,
+          "pred": 11,
+          "tp": 11
+        },
+        "org": {
+          "precision": 0.9,
+          "recall": 0.75,
+          "f1": 0.8182,
+          "gold": 48,
+          "pred": 40,
+          "tp": 36
+        },
+        "pro": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "gold": 1,
+          "pred": 3,
+          "tp": 0
+        },
+        "race": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "gold": 2,
+          "pred": 2,
+          "tp": 2
+        },
+        "title": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "gold": 63,
+          "pred": 0,
+          "tp": 0
+        }
+      }
+    },
+    "cluener": {
+      "items": 50,
+      "failed_items": [],
+      "gold": 114,
+      "pred": 82,
+      "tp": 58,
+      "precision": 0.7073,
+      "recall": 0.5088,
+      "f1": 0.5918,
+      "per_type": {
+        "address": {
+          "precision": 0.4,
+          "recall": 0.0952,
+          "f1": 0.1538,
+          "gold": 21,
+          "pred": 5,
+          "tp": 2
+        },
+        "book": {
+          "precision": 0.8333,
+          "recall": 0.7143,
+          "f1": 0.7692,
+          "gold": 7,
+          "pred": 6,
+          "tp": 5
+        },
+        "company": {
+          "precision": 0.6923,
+          "recall": 0.8182,
+          "f1": 0.75,
+          "gold": 11,
+          "pred": 13,
+          "tp": 9
+        },
+        "game": {
+          "precision": 0.4545,
+          "recall": 0.4167,
+          "f1": 0.4348,
+          "gold": 12,
+          "pred": 11,
+          "tp": 5
+        },
+        "government": {
+          "precision": 0.8333,
+          "recall": 0.5556,
+          "f1": 0.6667,
+          "gold": 9,
+          "pred": 6,
+          "tp": 5
+        },
+        "movie": {
+          "precision": 0.75,
+          "recall": 0.4286,
+          "f1": 0.5455,
+          "gold": 7,
+          "pred": 4,
+          "tp": 3
+        },
+        "name": {
+          "precision": 0.8889,
+          "recall": 0.8889,
+          "f1": 0.8889,
+          "gold": 18,
+          "pred": 18,
+          "tp": 16
+        },
+        "organization": {
+          "precision": 0.6875,
+          "recall": 0.9167,
+          "f1": 0.7857,
+          "gold": 12,
+          "pred": 16,
+          "tp": 11
+        },
+        "position": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "gold": 15,
+          "pred": 1,
+          "tp": 0
+        },
+        "scene": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "gold": 2,
+          "pred": 2,
+          "tp": 2
+        }
+      }
+    }
+  },
+  "languages": {
+    "cases": 24,
+    "passed": 24,
+    "failed": []
+  },
+  "wall_seconds": 277.2,
+  "usage": {
+    "requests": 561,
+    "questions": 10260,
+    "cache_hits": 0,
+    "input_tokens": 2033382,
+    "output_tokens": 10260,
+    "api_seconds": 1301.112
+  }
+}
